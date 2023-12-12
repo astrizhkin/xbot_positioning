@@ -222,8 +222,10 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         return;
     }
     // TODO fuse with high covariance?
-    if((msg->flags & (xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED)) == 0) {
-        ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not RTK Fixed");
+
+    if((msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED) == 0 && 
+	(msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FLOAT) == 0 ) {
+        ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not RTK Fixed nor Float");
         return;
     }
 
@@ -259,7 +261,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         valid_gps_samples++;
 
         if (!has_gps && valid_gps_samples > 10) {
-            ROS_INFO_STREAM("GPS data now valid");
+            //ROS_INFO_STREAM("GPS data now valid");
             ROS_INFO_STREAM("First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             // we don't even have gps yet, set odometry to first estimate
             core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 0.001);
@@ -267,6 +269,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             has_gps = true;
         } else if (has_gps) {
             // gps was valid before, we apply the filter
+            ROS_INFO_STREAM("Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 500.0);
             if(publish_debug) {
                 auto m = core.om2.h(core.ekf.getState());
