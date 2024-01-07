@@ -181,8 +181,13 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     }
     double dt = (msg->stamp - last_ticks.stamp).toSec();
 
-    double d_wheel_l = (msg->wheel_pos_rl - last_ticks.wheel_pos_rl + msg->wheel_pos_fl - last_ticks.wheel_pos_fl) * msg->wheel_radius / 2;
-    double d_wheel_r = (msg->wheel_pos_rr - last_ticks.wheel_pos_rr + msg->wheel_pos_fr - last_ticks.wheel_pos_fr) * msg->wheel_radius / 2;
+    double rl_delta = msg->wheel_pos_rl - last_ticks.wheel_pos_rl;
+    double fl_delta = msg->wheel_pos_fl - last_ticks.wheel_pos_fl;
+    double rr_delta = msg->wheel_pos_rr - last_ticks.wheel_pos_rr;
+    double fr_delta = msg->wheel_pos_fr - last_ticks.wheel_pos_fr;
+
+    double d_wheel_l = (rl_delta + fl_delta) * msg->wheel_radius / 2;
+    double d_wheel_r = (rr_delta + fr_delta) * msg->wheel_radius / 2;
 
     //if(msg->wheel_direction_rl) {
     //    d_wheel_l *= -1.0;
@@ -191,9 +196,9 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     //    d_wheel_r *= -1.0;
     //}
 
-    double d_ticks = (d_wheel_l + d_wheel_r) / 2.0;
-    vx = d_ticks / dt;
-    ROS_INFO("vx %f",vx);
+    double d_center = (d_wheel_l + d_wheel_r) / 2.0;
+    vx = d_center / dt;
+    ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
 }
@@ -334,10 +339,10 @@ int main(int argc, char **argv) {
 
     core.setAntennaOffset(antenna_offset_x, antenna_offset_y);
 
-    ROS_INFO_STREAM("Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y);
+    ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y);
 
     if(gyro_offset != 0.0 && skip_gyro_calibration) {
-        ROS_WARN_STREAM("Using gyro offset of: " << gyro_offset);
+        ROS_WARN_STREAM("[xbot_positioning] Using gyro offset of: " << gyro_offset);
     }
 
     odometry_pub = paramNh.advertise<nav_msgs::Odometry>("odom_out", 50);
