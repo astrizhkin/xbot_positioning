@@ -78,7 +78,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     if(!has_gyro) {
         if(!skip_gyro_calibration) {
             if (gyro_offset_samples == 0) {
-                ROS_INFO_STREAM("Started gyro calibration");
+                ROS_INFO_STREAM("[xbot_positioning] Started gyro calibration");
                 gyro_calibration_start = msg->header.stamp;
                 gyro_offset = 0;
             }
@@ -95,9 +95,9 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
                 gyro_offset = 0;
             }
             gyro_offset_samples = 0;
-            ROS_INFO_STREAM("Calibrated gyro offset: " << gyro_offset);
+            ROS_INFO_STREAM("[xbot_positioning] Calibrated gyro offset: " << gyro_offset);
         } else {
-            ROS_WARN("Skipped gyro calibration");
+            ROS_WARN("[xbot_positioning] Skipped gyro calibration");
             has_gyro = true;
             return;
         }
@@ -198,7 +198,7 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
 
     double d_center = (d_wheel_l + d_wheel_r) / 2.0;
     vx = d_center / dt;
-    ROS_INFO("vx %f dist %f",vx,d_center);
+    //ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
 }
@@ -223,25 +223,25 @@ bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPose
 
 void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
     if(!gps_enabled) {
-        ROS_INFO_STREAM_THROTTLE(1, "dropping GPS update, since gps_enabled = false.");
+        ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] dropping GPS update, since gps_enabled = false.");
         return;
     }
     // TODO fuse with high covariance?
 
     if((msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED) == 0 && 
 	(msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FLOAT) == 0 ) {
-        ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not RTK Fixed nor Float");
+        ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] Dropped GPS update, since it's not RTK Fixed nor Float");
         return;
     }
 
     if(msg->position_accuracy > max_gps_accuracy) {
-        ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not accurate enough. Accuracy was: " << msg->position_accuracy << ", limit is:" << max_gps_accuracy);
+        ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] Dropped GPS update, since it's not accurate enough. Accuracy was: " << msg->position_accuracy << ", limit is:" << max_gps_accuracy);
         return;
     }
 
     double time_since_last_gps = (ros::Time::now() - last_gps_time).toSec();
     if (time_since_last_gps > 5.0) {
-        ROS_WARN_STREAM("Last GPS was " << time_since_last_gps << " seconds ago.");
+        ROS_WARN_STREAM("[xbot_positioning] Last GPS was " << time_since_last_gps << " seconds ago.");
         has_gps = false;
         valid_gps_samples = 0;
         gps_outlier_count = 0;
@@ -267,14 +267,14 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
 
         if (!has_gps && valid_gps_samples > 10) {
             //ROS_INFO_STREAM("GPS data now valid");
-            ROS_INFO_STREAM("First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
+            ROS_INFO_STREAM("[xbot_positioning] First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             // we don't even have gps yet, set odometry to first estimate
             core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 0.001);
 
             has_gps = true;
         } else if (has_gps) {
             // gps was valid before, we apply the filter
-            ROS_INFO_STREAM("Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
+            ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 500.0);
             if(publish_debug) {
                 auto m = core.om2.h(core.ekf.getState());
@@ -288,11 +288,11 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             }
         }
     } else {
-        ROS_WARN_STREAM("GPS outlier found. Distance was: " << distance_to_last_gps);
+        ROS_WARN_STREAM("[xbot_positioning] GPS outlier found. Distance was: " << distance_to_last_gps);
         gps_outlier_count++;
         // ~10 sec
         if (gps_outlier_count > 10) {
-            ROS_ERROR_STREAM("too many outliers, assuming that the current gps value is valid.");
+            ROS_ERROR_STREAM("[xbot_positioning] too many outliers, assuming that the current gps value is valid.");
             // store the gps as last
             last_gps = *msg;
             last_gps_time = ros::Time::now();
