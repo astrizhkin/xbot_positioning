@@ -181,19 +181,19 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     }
     double dt = (msg->stamp - last_ticks.stamp).toSec();
 
-    double d_wheel_l = (double) (msg->wheel_ticks_rl - last_ticks.wheel_ticks_rl) * (1/(double)msg->wheel_tick_factor);
-    double d_wheel_r = (double) (msg->wheel_ticks_rr - last_ticks.wheel_ticks_rr) * (1/(double)msg->wheel_tick_factor);
+    double d_wheel_l = (msg->wheel_pos_rl - last_ticks.wheel_pos_rl + msg->wheel_pos_fl - last_ticks.wheel_pos_fl) * msg->wheel_radius / 2;
+    double d_wheel_r = (msg->wheel_pos_rr - last_ticks.wheel_pos_rr + msg->wheel_pos_fr - last_ticks.wheel_pos_fr) * msg->wheel_radius / 2;
 
-    if(msg->wheel_direction_rl) {
-        d_wheel_l *= -1.0;
-    }
-    if(msg->wheel_direction_rr) {
-        d_wheel_r *= -1.0;
-    }
-
+    //if(msg->wheel_direction_rl) {
+    //    d_wheel_l *= -1.0;
+    //}
+    //if(msg->wheel_direction_rr) {
+    //    d_wheel_r *= -1.0;
+    //}
 
     double d_ticks = (d_wheel_l + d_wheel_r) / 2.0;
     vx = d_ticks / dt;
+    ROS_INFO("vx %f",vx);
 
     last_ticks = *msg;
 }
