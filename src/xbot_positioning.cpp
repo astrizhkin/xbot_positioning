@@ -205,7 +205,7 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
     gps_enabled = req.gps_enabled;
-    ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] set gps_enabled = " << req.gps_enabled << " with reason "+req.reason);
+    ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] set gps_enabled = " << (int)req.gps_enabled << " with reason " << req.reason);
     return true;
 }
 
