@@ -204,12 +204,13 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
 }
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
+    ROS_INFO_STREAM("[xbot_positioning] set gps_enabled = " << (int)req.gps_enabled << " with reason [" << req.reason <<+"]");
     gps_enabled = req.gps_enabled;
-    ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] set gps_enabled = " << (int)req.gps_enabled << " with reason " << req.reason);
     return true;
 }
 
 bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPoseSrvResponse &res) {
+    ROS_INFO_STREAM("[xbot_positioning] set pose with reason [" << req.reason << "]");
     tf2::Quaternion q;
     tf2::fromMsg(req.robot_pose.orientation, q);
 
