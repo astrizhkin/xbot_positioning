@@ -45,8 +45,13 @@ xbot_msgs::AbsolutePose last_gps;
 bool has_gyro;
 sensor_msgs::Imu last_imu;
 ros::Time gyro_calibration_start;
-double gyro_offset;
-int gyro_offset_samples;
+//double gyro_offset_x;
+//double gyro_offset_y;
+//double gyro_offset_z;
+
+//double accel_offset_x;
+//double accel_offset_y;
+//double accel_offset_z;
 
 // Current speed calculated by wheel ticks
 double vx = 0.0;
@@ -73,38 +78,102 @@ int valid_gps_samples = 0;
 
 ros::Time last_gps_time(0.0);
 
+tf2::Vector3 normal_gravity_vector(0.0, 0.0, -9.81);
+tf2::Vector3 accel_bias(0.0, 0.0, 0.0);
+tf2::Vector3 gyro_bias(0.0, 0.0, 0.0);
+int bias_samples_count;
+
+/*void OdomPredictor::integrateIMUData(const sensor_msgs::Imu& msg) {
+  if (!has_imu_meas) {
+    estimate_timestamp_ = msg.header.stamp;
+    has_imu_meas = true;
+    return;
+  }
+
+  const double delta_time = (msg.header.stamp - estimate_timestamp_).toSec();
+
+  Vector3 imu_linear_acceleration, imu_angular_velocity;
+
+  const Vector3 final_angular_velocity =
+      (imu_angular_velocity - imu_angular_velocity_bias_);
+  const Vector3 delta_angle =
+      delta_time * (final_angular_velocity + angular_velocity_) / 2.0;
+  angular_velocity_ = final_angular_velocity;
+
+  // apply half of the rotation delta
+  const Rotation half_delta_rotation = Rotation::exp(delta_angle / 2.0);
+
+  if (!have_orientation_) {
+    transform_.getRotation() = transform_.getRotation() * half_delta_rotation;
+  }
+
+  // find changes in linear velocity and position
+  const Vector3 delta_linear_velocity =
+      delta_time * (imu_linear_acceleration +
+                    transform_.getRotation().inverse().rotate(kGravity) -
+                    imu_linear_acceleration_bias_);
+  transform_.getPosition() =
+      transform_.getPosition() +
+      transform_.getRotation().rotate(
+          delta_time * (linear_velocity_ + delta_linear_velocity / 2.0));
+  linear_velocity_ += delta_linear_velocity;
+
+  if (!have_orientation_) {
+  // apply the other half of the rotation delta
+    transform_.getRotation() = transform_.getRotation() * half_delta_rotation;
+  }
+
+  estimate_timestamp_ = msg.header.stamp;
+}*/
+
 
 void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
+    tf2::Vector3 imu_accel(msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z);
+    tf2::Vector3 imu_gyro(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+
     if(!has_gyro) {
         if(!skip_gyro_calibration) {
-            if (gyro_offset_samples == 0) {
-                ROS_INFO_STREAM("[xbot_positioning] Started gyro calibration");
+            if (bias_samples_count == 0) {
+                ROS_INFO_STREAM("[xbot_positioning] Started IMU calibration. Robot must be in horizontal position.");
                 gyro_calibration_start = msg->header.stamp;
-                gyro_offset = 0;
+                gyro_bias.setValue(0.0,0.0,0.0);
+                accel_bias.setValue(0.0,0.0,0.0);
             }
-            gyro_offset += msg->angular_velocity.z;
-            gyro_offset_samples++;
-            if ((msg->header.stamp - gyro_calibration_start).toSec() < 5) {
+            gyro_bias += imu_gyro;
+            accel_bias += imu_accel;
+            bias_samples_count++;
+            if ((msg->header.stamp - gyro_calibration_start).toSec() < 7) {
                 last_imu = *msg;
                 return;
             }
             has_gyro = true;
-            if (gyro_offset_samples > 0) {
-                gyro_offset /= gyro_offset_samples;
+            if (bias_samples_count > 0) {
+                gyro_bias /= bias_samples_count;
+                accel_bias /= bias_samples_count;
+                accel_bias -= normal_gravity_vector;
             } else {
-                gyro_offset = 0;
+                gyro_bias.setValue(0.0,0.0,0.0);
+                accel_bias.setValue(0.0,0.0,0.0);
             }
-            gyro_offset_samples = 0;
-            ROS_INFO_STREAM("[xbot_positioning] Calibrated gyro offset: " << gyro_offset);
+            bias_samples_count = 0;
+            ROS_INFO_STREAM("[xbot_positioning] Calibrated IMU bias gyro " << gyro_bias.x() << ", " << gyro_bias.y() << ", " << gyro_bias.z() << " accel " << accel_bias.x() << ", " << accel_bias.y() << ", " << accel_bias.z());
         } else {
-            ROS_WARN("[xbot_positioning] Skipped gyro calibration");
+            ROS_WARN("[xbot_positioning] Skipped IMU calibration");
             has_gyro = true;
             return;
         }
     }
 
-    core.predict(vx, msg->angular_velocity.z - gyro_offset, (msg->header.stamp - last_imu.header.stamp).toSec());
-    auto x = core.updateSpeed(vx, msg->angular_velocity.z - gyro_offset,0.01);
+    //substract bias
+    imu_accel -= accel_bias;
+    imu_gyro -= gyro_bias;
+
+    //first calculate angle to the normal calibrated gravity
+    double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
+    ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity);
+
+    core.predict(vx, imu_gyro.z(), (msg->header.stamp - last_imu.header.stamp).toSec());
+    auto x = core.updateSpeed(vx, imu_gyro.z(),0.01);
 
     odometry.header.stamp = ros::Time::now();
     odometry.header.seq++;
@@ -317,8 +386,10 @@ int main(int argc, char **argv) {
     vx = 0.0;
     has_gyro = false;
     has_ticks = false;
-    gyro_offset = 0;
-    gyro_offset_samples = 0;
+    gyro_bias.setValue(0.0,0.0,0.0);
+    accel_bias.setValue(0.0,0.0,0.0);
+
+    bias_samples_count = 0;
 
     valid_gps_samples = 0;
     gps_outlier_count = 0;
@@ -332,7 +403,8 @@ int main(int argc, char **argv) {
     ros::ServiceServer pose_service = n.advertiseService("xbot_positioning/set_robot_pose", setPose);
 
     paramNh.param("skip_gyro_calibration", skip_gyro_calibration, false);
-    paramNh.param("gyro_offset", gyro_offset, 0.0);
+    double gyro_bias_z;
+    paramNh.param("gyro_offset", gyro_bias_z, 0.0);
     paramNh.param("min_speed", min_speed, 0.01);
     paramNh.param("max_gps_accuracy", max_gps_accuracy, 0.1);
     paramNh.param("debug", publish_debug, false);
@@ -343,8 +415,9 @@ int main(int argc, char **argv) {
 
     ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y);
 
-    if(gyro_offset != 0.0 && skip_gyro_calibration) {
-        ROS_WARN_STREAM("[xbot_positioning] Using gyro offset of: " << gyro_offset);
+    if(gyro_bias_z != 0.0 && skip_gyro_calibration) {
+        gyro_bias.setZ(gyro_bias_z);
+        ROS_WARN_STREAM("[xbot_positioning] Using gyro z offset of: " << gyro_bias.z());
     }
 
     odometry_pub = paramNh.advertise<nav_msgs::Odometry>("odom_out", 50);
