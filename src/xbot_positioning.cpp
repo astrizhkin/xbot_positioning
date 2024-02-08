@@ -78,7 +78,7 @@ int valid_gps_samples = 0;
 
 ros::Time last_gps_time(0.0);
 
-tf2::Vector3 normal_gravity_vector(0.0, 0.0, -9.81);
+tf2::Vector3 normal_gravity_vector(0.0, 0.0, 9.81);
 tf2::Vector3 accel_bias(0.0, 0.0, 0.0);
 tf2::Vector3 gyro_bias(0.0, 0.0, 0.0);
 int bias_samples_count;
