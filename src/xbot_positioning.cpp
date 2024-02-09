@@ -170,7 +170,18 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
 
     //first calculate angle to the normal calibrated gravity
     double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
-    ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity);
+    
+    //compute pitch and roll (it includes acceleration component unfortunately)
+    //pitch angle around y axis
+    tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
+    double pitch_angle = pitch_vector.angle(normal_gravity_vector);
+    //roll angle around x axis 
+    tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
+    double roll_angle = roll_vector.angle(normal_gravity_vector);
+    ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity << " pitch " << pitch_angle << " roll " << roll_angle);
+    //TODO add pitch and roll to EKF
+    //pitch_angle = core.updatePitch(pitch_angle);
+    //roll_angle = core.updateRoll(roll_angle);
 
     core.predict(vx, imu_gyro.z(), (msg->header.stamp - last_imu.header.stamp).toSec());
     auto x = core.updateSpeed(vx, imu_gyro.z(),0.01);
@@ -181,8 +192,10 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     odometry.child_frame_id = "base_link";
     odometry.pose.pose.position.x = x.x_pos();
     odometry.pose.pose.position.y = x.y_pos();
+    //TODO calucalte Z from GPS z and pitch * velocity
     odometry.pose.pose.position.z = 0;
-    tf2::Quaternion q(0.0, 0.0, x.theta());
+    //TODO calucalate pitch and roll from EKF accelerometer and gyroscope
+    tf2::Quaternion q(roll_angle, pitch_angle, x.theta());
     odometry.pose.pose.orientation = tf2::toMsg(q);
 
     geometry_msgs::TransformStamped odom_trans;

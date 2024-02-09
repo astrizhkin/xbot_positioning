@@ -53,16 +53,16 @@ namespace xbot {
         public:
             Kalman::ExtendedKalmanFilter<StateT> ekf{};
             SystemModelT sys{};
-            PositionModelT pm{};
-            OrientationModelT om{};
-            OrientationModelT2 om2{};
-            SpeedModelT sm{};
+            PositionModelT p_model{};
+            OrientationModelT o_model{};
+            OrientationModelT2 o2_model{};
+            SpeedModelT s_model{};
 
             ControlT u{};
-            PositionMeasurementT pos_m{};
-            OrientationMeasurementT orient_m{};
-            OrientationMeasurementT2 orient_m2{};
-            SpeedMeasurementT speed_m{};
+            PositionMeasurementT pos_meas{};
+            OrientationMeasurementT orient_meas{};
+            OrientationMeasurementT2 orient2_meas{};
+            SpeedMeasurementT speed_meas{};
         };
     }
 }
