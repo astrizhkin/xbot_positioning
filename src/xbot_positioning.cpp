@@ -126,10 +126,13 @@ int bias_samples_count;
   estimate_timestamp_ = msg.header.stamp;
 }*/
 
+double gyro_pitch = 0.0;
+double gyro_roll = 0.0;
 
 void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     tf2::Vector3 imu_accel(msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z);
     tf2::Vector3 imu_gyro(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+    double dt = (msg->header.stamp - last_imu.header.stamp).toSec();
 
     if(!has_gyro) {
         if(!skip_gyro_calibration) {
@@ -168,22 +171,47 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     imu_accel -= accel_bias;
     imu_gyro -= gyro_bias;
 
+
+
     //first calculate angle to the normal calibrated gravity
     double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
     
     //compute pitch and roll (it includes acceleration component unfortunately)
     //pitch angle around y axis
     tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
-    double pitch_angle = pitch_vector.angle(normal_gravity_vector);
+    tf2::Vector3 pitch_cross = normal_gravity_vector.cross(pitch_vector);
+    double pitch_angle = normal_gravity_vector.angle(pitch_vector);
+    if (pitch_cross.y() < 0) {
+        pitch_angle = -pitch_angle;
+    }
     //roll angle around x axis 
     tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
-    double roll_angle = roll_vector.angle(normal_gravity_vector);
-    ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity << " pitch " << pitch_angle << " roll " << roll_angle);
+    double roll_angle = normal_gravity_vector.angle(roll_vector);
+    tf2::Vector3 roll_cross = normal_gravity_vector.cross(roll_vector);
+    if (roll_cross.x() > 0) {
+        roll_angle = -roll_angle;
+    }
+
+    gyro_pitch+= imu_gyro.y()*dt;
+    gyro_roll+=imu_gyro.x()*dt;
+    if(angle_to_normal_gravity > 0.05) {
+        //ROS_INFO_STREAM("[xbot_positioning] pitch cross " << pitch_cross.x() << ", " << pitch_cross.y() << ", " << pitch_cross.z());
+        //ROS_INFO_STREAM("[xbot_positioning] roll cross " << roll_cross.x() << ", " << roll_cross.y() << ", " << roll_cross.z());
+        //ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity << " pitch " << pitch_angle << " roll " << roll_angle);
+        //ROS_INFO_STREAM("[xbot_positioning] calibrated IMU accel " << imu_accel.x() << ", " << imu_accel.y() << ", " << imu_accel.z());
+
+        if( abs(pitch_angle) > 0.2 ) {
+            ROS_INFO_STREAM("[xbot_positioning] pitch " << pitch_angle << " gyro " << gyro_pitch);
+        }
+        if( abs(roll_angle) > 0.2 ) {
+            ROS_INFO_STREAM("[xbot_positioning] roll " << roll_angle << " gyro " << gyro_roll);
+        }
+    }
     //TODO add pitch and roll to EKF
     //pitch_angle = core.updatePitch(pitch_angle);
     //roll_angle = core.updateRoll(roll_angle);
 
-    core.predict(vx, imu_gyro.z(), (msg->header.stamp - last_imu.header.stamp).toSec());
+    core.predict(vx, imu_gyro.z(), dt);
     auto x = core.updateSpeed(vx, imu_gyro.z(),0.01);
 
     odometry.header.stamp = ros::Time::now();
