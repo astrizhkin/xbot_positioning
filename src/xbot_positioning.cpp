@@ -361,7 +361,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             //ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 500.0);
             if(publish_debug) {
-                auto m = core.om2.h(core.ekf.getState());
+                auto m = core.o2_model.h(core.ekf.getState());
                 geometry_msgs::Vector3 dbg;
                 dbg.x = m.vx();
                 dbg.y = m.vy();
