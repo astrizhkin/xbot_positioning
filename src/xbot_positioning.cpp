@@ -171,11 +171,6 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     imu_accel -= accel_bias;
     imu_gyro -= gyro_bias;
 
-
-
-    //first calculate angle to the normal calibrated gravity
-    double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
-    
     //compute pitch and roll (it includes acceleration component unfortunately)
     //pitch angle around y axis
     tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
@@ -186,14 +181,19 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     }
     //roll angle around x axis 
     tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
-    double roll_angle = normal_gravity_vector.angle(roll_vector);
     tf2::Vector3 roll_cross = normal_gravity_vector.cross(roll_vector);
+    double roll_angle = normal_gravity_vector.angle(roll_vector);
+    //it works but why we check here for the positive to reverse? 
     if (roll_cross.x() > 0) {
         roll_angle = -roll_angle;
     }
 
     gyro_pitch+= imu_gyro.y()*dt;
     gyro_roll+=imu_gyro.x()*dt;
+
+    //debug section
+    //first calculate angle to the normal calibrated gravity
+    double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
     if(angle_to_normal_gravity > 0.05) {
         //ROS_INFO_STREAM("[xbot_positioning] pitch cross " << pitch_cross.x() << ", " << pitch_cross.y() << ", " << pitch_cross.z());
         //ROS_INFO_STREAM("[xbot_positioning] roll cross " << roll_cross.x() << ", " << roll_cross.y() << ", " << roll_cross.z());
@@ -278,7 +278,6 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     xb_absolute_pose_msg.motion_heading = x.theta();
 
     xbot_absolute_pose_pub.publish(xb_absolute_pose_msg);
-
 
     last_imu = *msg;
 }
@@ -414,9 +413,6 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             gps_outlier_count = 0;
         }
     }
-
-
-
 }
 
 int main(int argc, char **argv) {
