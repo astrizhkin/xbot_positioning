@@ -20,38 +20,48 @@ namespace xbot {
  * @param T Numeric scalar type
  */
         template<typename T>
-        class State : public Kalman::Vector<T, 5> {
+        class State : public Kalman::Vector<T, 8> {
         public:
-            KALMAN_VECTOR(State, T,
-            5)
+            KALMAN_VECTOR(State, T, 8)
 
             //! X-position
             static constexpr size_t X = 0;
             //! Y-Position
             static constexpr size_t Y = 1;
+            //! Z-Position
+            static constexpr size_t Z = 2;
             //! Orientation
-            static constexpr size_t THETA = 2;
-            //! Speed in x dir
-            static constexpr size_t VX = 3;
+            static constexpr size_t ROLL = 3;
+            //! Orientation
+            static constexpr size_t PITCH = 4;
+            //! Orientation
+            static constexpr size_t YAW = 5;
+            //! Speed lenaar
+            static constexpr size_t SL = 6;
             //! Speed angular
-            static constexpr size_t VR = 4;
-
+            static constexpr size_t SA = 7;
 
             T x_pos() const { return (*this)[X]; }
-
             T y_pos() const { return (*this)[Y]; }
+            T z_pos() const { return (*this)[Z]; }
 
-            T theta() const { return (*this)[THETA]; }
-            T vx() const { return (*this)[VX]; }
-            T vr() const { return (*this)[VR]; }
+            T roll() const { return (*this)[ROLL]; }
+            T pitch() const { return (*this)[PITCH]; }
+            T yaw() const { return (*this)[YAW]; }
+
+            T sl() const { return (*this)[SL]; }
+            T sa() const { return (*this)[SA]; }
 
             T &x_pos() { return (*this)[X]; }
-
             T &y_pos() { return (*this)[Y]; }
+            T &z_pos() { return (*this)[Z]; }
 
-            T &theta() { return (*this)[THETA]; }
-            T &vx() { return (*this)[VX]; }
-            T &vr() { return (*this)[VR]; }
+            T &roll() { return (*this)[ROLL]; }
+            T &pitch() { return (*this)[PITCH]; }
+            T &yaw() { return (*this)[YAW]; }
+
+            T &sl() { return (*this)[SL]; }
+            T &sa() { return (*this)[SA]; }
 
         };
 
@@ -65,23 +75,30 @@ namespace xbot {
  * @param T Numeric scalar type
  */
         template<typename T>
-        class Control : public Kalman::Vector<T, 2> {
+        class Control : public Kalman::Vector<T, 4> {
         public:
-            KALMAN_VECTOR(Control, T,
-            2)
+            KALMAN_VECTOR(Control, T, 4)
 
             //! Velocity
             static constexpr size_t V = 0;
             //! Angular Rate (Orientation-change)
-            static constexpr size_t DTHETA = 1;
+            static constexpr size_t DROLL = 1;
+            //! Angular Rate (Orientation-change)
+            static constexpr size_t DPITCH = 2;
+            //! Angular Rate (Orientation-change)
+            static constexpr size_t DYAW = 3;
 
             T v() const { return (*this)[V]; }
 
-            T dtheta() const { return (*this)[DTHETA]; }
+            T droll() const { return (*this)[DROLL]; }
+            T dpitch() const { return (*this)[DPITCH]; }
+            T dyaw() const { return (*this)[DYAW]; }
 
             T &v() { return (*this)[V]; }
 
-            T &dtheta() { return (*this)[DTHETA]; }
+            T &droll() { return (*this)[DROLL]; }
+            T &dpitch() { return (*this)[DPITCH]; }
+            T &dyaw() { return (*this)[DYAW]; }
         };
 
 /**
@@ -125,21 +142,27 @@ namespace xbot {
                 S x_;
 
                 // New orientation given by old orientation plus orientation change
-                auto newOrientation = x.theta() + u.dtheta() * dt;
+                auto newRoll = x.roll() + u.droll() * dt;
+                auto newPitch = x.pitch() + u.dpitch() * dt;
+                auto newYaw = x.yaw() + u.dyaw() * dt;
+
                 // Re-scale orientation to [-pi/2 to +pi/2]
 
-                x_.theta() = newOrientation;
+                x_.roll() = newRoll;
+                x_.pitch() = newPitch;
+                x_.yaw() = newYaw;
 
                 // New x-position given by old x-position plus change in x-direction
                 // Change in x-direction is given by the cosine of the (new) orientation
                 // times the velocity
-                x_.x() = x.x() + std::cos(newOrientation) * u.v() * dt;
-                x_.y() = x.y() + std::sin(newOrientation) * u.v() * dt;
+                x_.x() = x.x() + std::cos(newYaw) * std::cos(newPitch) * u.v() * dt;
+                x_.y() = x.y() + std::sin(newYaw) * std::cos(newPitch) * u.v() * dt;
+                x_.z() = x.z() + std::sin(newPitch) * u.v() * dt;
 
-                x_.vx() = x.vx();
-                x_.vr() = x.vr();
+                x_.sl() = x.sl();
+                x_.sa() = x.sa();
 //                x_.vx() = u.v();
-//                x_.vr() = u.dtheta();
+//                x_.vr() = u.dyaw();
 
 
                 // Return transitioned state vector
@@ -167,24 +190,32 @@ namespace xbot {
                 // F = df/dx (Jacobian of state transition w.r.t. the state)
                 this->F.setZero();
 
-                // partial derivative of x.x() w.r.t. x.x()
+                auto newRoll = x.roll() + u.droll() * dt;
+                auto newPitch = x.pitch() + u.dpitch() * dt;
+                auto newYaw = x.yaw() + u.dyaw() * dt;
+
+                //d sinx / dx = cosx
+                //d cosx / dx = -sinx
                 this->F(S::X, S::X) = 1;
-                // partial derivative of x.x() w.r.t. x.theta()
-                this->F(S::X, S::THETA) = -std::sin(x.theta() + u.dtheta() * dt) * u.v() * dt;
+                // partial differential of (x.x() + std::cos(newYaw) * std::cos(newPitch) * u.v() * dt)
+                this->F(S::X, S::YAW) =   -std::sin(newYaw) * std::cos(newPitch) * u.v() * dt;
+                this->F(S::X, S::PITCH) = -std::cos(newYaw) * std::sin(newPitch) * u.v() * dt;
 
-                // partial derivative of x.y() w.r.t. x.y()
                 this->F(S::Y, S::Y) = 1;
-                // partial derivative of x.y() w.r.t. x.theta()
-                this->F(S::Y, S::THETA) = std::cos(x.theta() + u.dtheta() * dt) * u.v() * dt;
+                // partial differential of (x.y() + std::sin(newYaw) * std::cos(newPitch) * u.v() * dt)
+                this->F(S::Y, S::YAW) =    std::cos(newYaw) * std::cos(newPitch) * u.v() * dt;
+                this->F(S::Y, S::PITCH) = -std::sin(newYaw) * std::sin(newPitch) * u.v() * dt;
 
-                // partial derivative of x.theta() w.r.t. x.theta()
-                this->F(S::THETA, S::THETA) = 1;
+                this->F(S::Z, S::Z) = 1;
+                // partial differential of (x.z() + std::sin(newPitch) * u.v() * dt)
+                this->F(S::Z, S::PITCH) =  std::cos(newPitch) * u.v() * dt;
 
-                // partial derivative of x.theta() w.r.t. x.theta()
-                this->F(S::VX, S::VX) = 1;
-                // partial derivative of x.theta() w.r.t. x.theta()
-                this->F(S::VR, S::VR) = 1;
+                this->F(S::ROLL, S::ROLL) = 1;
+                this->F(S::PITCH, S::PITCH) = 1;
+                this->F(S::YAW, S::YAW) = 1;
 
+                this->F(S::SL, S::SL) = 1;
+                this->F(S::SA, S::SA) = 1;
 
                 // W = df/dw (Jacobian of state transition w.r.t. the noise)
                 this->W.setIdentity();

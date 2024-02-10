@@ -54,7 +54,7 @@ ros::Time gyro_calibration_start;
 //double accel_offset_z;
 
 // Current speed calculated by wheel ticks
-double vx = 0.0;
+double linearVelocity = 0.0;
 
 // Min speed for motion vector to be fed into kalman filter
 double min_speed = 0.0;
@@ -66,7 +66,7 @@ double max_gps_accuracy;
 bool publish_debug;
 
 // Antenna offset (offset between point of rotation and antenna)
-double antenna_offset_x, antenna_offset_y;
+double antenna_offset_x, antenna_offset_y, antenna_offset_z;
 
 nav_msgs::Odometry odometry;
 xbot_positioning::KalmanState state_msg;
@@ -134,8 +134,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     tf2::Vector3 imu_gyro(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
     double dt = (msg->header.stamp - last_imu.header.stamp).toSec();
 
-    if(!has_gyro) {
-        if(!skip_gyro_calibration) {
+    if (!has_gyro) {
+        if (!skip_gyro_calibration) {
             if (bias_samples_count == 0) {
                 ROS_INFO_STREAM("[xbot_positioning] Started IMU calibration. Robot must be in horizontal position.");
                 gyro_calibration_start = msg->header.stamp;
@@ -191,28 +191,31 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     gyro_pitch+= imu_gyro.y()*dt;
     gyro_roll+=imu_gyro.x()*dt;
 
+    //TODO add pitch and roll to EKF
+    //pitch_angle = core.updatePitch(pitch_angle);
+    //roll_angle = core.updateRoll(roll_angle);
+
+    core.predict(linearVelocity, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
+    //TODO: we don't know actual yaw... what should we do?
+    core.updateOrientation(roll_angle, pitch_angle, /*core.getState().yaw(),*/ 5000.0);
+    auto x = core.updateSpeed(linearVelocity, imu_gyro.z(),0.01);
+
     //debug section
     //first calculate angle to the normal calibrated gravity
     double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
-    if(angle_to_normal_gravity > 0.05) {
+    if (angle_to_normal_gravity > 0.05) {
         //ROS_INFO_STREAM("[xbot_positioning] pitch cross " << pitch_cross.x() << ", " << pitch_cross.y() << ", " << pitch_cross.z());
         //ROS_INFO_STREAM("[xbot_positioning] roll cross " << roll_cross.x() << ", " << roll_cross.y() << ", " << roll_cross.z());
         //ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity << " pitch " << pitch_angle << " roll " << roll_angle);
         //ROS_INFO_STREAM("[xbot_positioning] calibrated IMU accel " << imu_accel.x() << ", " << imu_accel.y() << ", " << imu_accel.z());
 
         if( abs(pitch_angle) > 0.2 ) {
-            ROS_INFO_STREAM("[xbot_positioning] pitch " << pitch_angle << " gyro " << gyro_pitch);
+            ROS_INFO_STREAM("[xbot_positioning] pitch " << pitch_angle << " gyro " << gyro_pitch << " ekf "<< x.pitch());
         }
         if( abs(roll_angle) > 0.2 ) {
-            ROS_INFO_STREAM("[xbot_positioning] roll " << roll_angle << " gyro " << gyro_roll);
+            ROS_INFO_STREAM("[xbot_positioning] roll " << roll_angle << " gyro " << gyro_roll << " ekf " << x.roll());
         }
     }
-    //TODO add pitch and roll to EKF
-    //pitch_angle = core.updatePitch(pitch_angle);
-    //roll_angle = core.updateRoll(roll_angle);
-
-    core.predict(vx, imu_gyro.z(), dt);
-    auto x = core.updateSpeed(vx, imu_gyro.z(),0.01);
 
     odometry.header.stamp = ros::Time::now();
     odometry.header.seq++;
@@ -220,10 +223,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     odometry.child_frame_id = "base_link";
     odometry.pose.pose.position.x = x.x_pos();
     odometry.pose.pose.position.y = x.y_pos();
-    //TODO calucalte Z from GPS z and pitch * velocity
-    odometry.pose.pose.position.z = 0;
-    //TODO calucalate pitch and roll from EKF accelerometer and gyroscope
-    tf2::Quaternion q(roll_angle, pitch_angle, x.theta());
+    odometry.pose.pose.position.z = x.z_pos();
+    tf2::Quaternion q(x.roll(), x.pitch(), x.yaw());
     odometry.pose.pose.orientation = tf2::toMsg(q);
 
     geometry_msgs::TransformStamped odom_trans;
@@ -237,13 +238,16 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     static tf2_ros::TransformBroadcaster transform_broadcaster;
     transform_broadcaster.sendTransform(odom_trans);
 
-    if(publish_debug) {
+    if (publish_debug) {
         auto state = core.getState();
         state_msg.x = state.x();
         state_msg.y = state.y();
-        state_msg.theta = state.theta();
-        state_msg.vx = state.vx();
-        state_msg.vr = state.vr();
+        state_msg.z = state.z();
+        state_msg.roll = state.roll();
+        state_msg.pitch = state.pitch();
+        state_msg.yaw = state.yaw();
+        state_msg.sl = state.sl();
+        state_msg.sa = state.sa();
 
         kalman_state.publish(state_msg);
     }
@@ -260,12 +264,12 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     // TODO: send motion vector
     xb_absolute_pose_msg.motion_vector_valid = false;
     // TODO: set real value from kalman filter, not the one from the GPS.
-    if(has_gps) {
+    if (has_gps) {
         xb_absolute_pose_msg.position_accuracy = last_gps.position_accuracy;
     } else {
         xb_absolute_pose_msg.position_accuracy = 999;
     }
-    if((ros::Time::now() - last_gps_time).toSec() < 10.0) {
+    if ((ros::Time::now() - last_gps_time).toSec() < 10.0) {
         xb_absolute_pose_msg.flags |= xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE;
     } else {
         // on GPS timeout, we set accuracy to 0.
@@ -274,8 +278,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     // TODO: set real value
     xb_absolute_pose_msg.orientation_accuracy = 0.01;
     xb_absolute_pose_msg.pose = odometry.pose;
-    xb_absolute_pose_msg.vehicle_heading = x.theta();
-    xb_absolute_pose_msg.motion_heading = x.theta();
+    xb_absolute_pose_msg.vehicle_heading = x.yaw();
+    xb_absolute_pose_msg.motion_heading = x.yaw();
 
     xbot_absolute_pose_pub.publish(xb_absolute_pose_msg);
 
@@ -283,7 +287,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
 }
 
 void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
-    if(!has_ticks) {
+    if (!has_ticks) {
         last_ticks = *msg;
         has_ticks = true;
         return;
@@ -306,7 +310,7 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     //}
 
     double d_center = (d_wheel_l + d_wheel_r) / 2.0;
-    vx = d_center / dt;
+    linearVelocity = d_center / dt;
     //ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
@@ -323,29 +327,28 @@ bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPose
     tf2::Quaternion q;
     tf2::fromMsg(req.robot_pose.orientation, q);
 
-
     tf2::Matrix3x3 m(q);
-    double unused1, unused2, yaw;
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
 
-    m.getRPY(unused1, unused2, yaw);
-    core.setState(req.robot_pose.position.x, req.robot_pose.position.y, yaw,0,0);
+    core.setState(req.robot_pose.position.x, req.robot_pose.position.y, req.robot_pose.position.z, 0, 0, yaw, 0, 0);
     return true;
 }
 
 void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
-    if(!gps_enabled) {
+    if (!gps_enabled) {
         ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] dropping GPS update, since gps_enabled = false.");
         return;
     }
     // TODO fuse with high covariance?
 
-    if((msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED) == 0 && 
+    if ((msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED) == 0 && 
 	(msg->flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FLOAT) == 0 ) {
         ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] Dropped GPS update, since it's not RTK Fixed nor Float");
         return;
     }
 
-    if(msg->position_accuracy > max_gps_accuracy) {
+    if (msg->position_accuracy > max_gps_accuracy) {
         ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] Dropped GPS update, since it's not accurate enough. Accuracy was: " << msg->position_accuracy << ", limit is:" << max_gps_accuracy);
         return;
     }
@@ -362,8 +365,8 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         return;
     }
 
-    tf2::Vector3 gps_pos(msg->pose.pose.position.x,msg->pose.pose.position.y,msg->pose.pose.position.z);
-    tf2::Vector3 last_gps_pos(last_gps.pose.pose.position.x,last_gps.pose.pose.position.y,last_gps.pose.pose.position.z);
+    tf2::Vector3 gps_pos(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
+    tf2::Vector3 last_gps_pos(last_gps.pose.pose.position.x, last_gps.pose.pose.position.y, last_gps.pose.pose.position.z);
 
     double distance_to_last_gps = (last_gps_pos - gps_pos).length();
 
@@ -380,22 +383,23 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             //ROS_INFO_STREAM("GPS data now valid");
             ROS_INFO_STREAM("[xbot_positioning] First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             // we don't even have gps yet, set odometry to first estimate
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 0.001);
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 0.001);
 
             has_gps = true;
         } else if (has_gps) {
             // gps was valid before, we apply the filter
             //ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 500.0);
-            if(publish_debug) {
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 500.0);
+            if (publish_debug) {
                 auto m = core.o2_model.h(core.ekf.getState());
                 geometry_msgs::Vector3 dbg;
                 dbg.x = m.vx();
                 dbg.y = m.vy();
+                dbg.z = m.vz();
                 dbg_expected_motion_vector.publish(dbg);
             }
-            if(std::sqrt(std::pow(msg->motion_vector.x, 2)+std::pow(msg->motion_vector.y, 2)) >= min_speed) {
-                core.updateOrientation2(msg->motion_vector.x, msg->motion_vector.y, 10000.0);
+            if (std::sqrt(std::pow(msg->motion_vector.x, 2) + std::pow(msg->motion_vector.y, 2)) >= min_speed) {
+                core.updateOrientation2(msg->motion_vector.x, msg->motion_vector.y, msg->motion_vector.z, 10000.0);
             }
         }
     } else {
@@ -420,7 +424,7 @@ int main(int argc, char **argv) {
 
     has_gps = false;
     gps_enabled = true;
-    vx = 0.0;
+    linearVelocity = 0.0;
     has_gyro = false;
     has_ticks = false;
     gyro_bias.setValue(0.0,0.0,0.0);
@@ -431,7 +435,7 @@ int main(int argc, char **argv) {
     valid_gps_samples = 0;
     gps_outlier_count = 0;
 
-    antenna_offset_x = antenna_offset_y = 0;
+    antenna_offset_x = antenna_offset_y = antenna_offset_z = 0;
 
     ros::NodeHandle n;
     ros::NodeHandle paramNh("~");
@@ -447,19 +451,20 @@ int main(int argc, char **argv) {
     paramNh.param("debug", publish_debug, false);
     paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
     paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
+    paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
 
-    core.setAntennaOffset(antenna_offset_x, antenna_offset_y);
+    core.setAntennaOffset(antenna_offset_x, antenna_offset_y, antenna_offset_z);
 
     ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y);
 
-    if(gyro_bias_z != 0.0 && skip_gyro_calibration) {
+    if (gyro_bias_z != 0.0 && skip_gyro_calibration) {
         gyro_bias.setZ(gyro_bias_z);
         ROS_WARN_STREAM("[xbot_positioning] Using gyro z offset of: " << gyro_bias.z());
     }
 
     odometry_pub = paramNh.advertise<nav_msgs::Odometry>("odom_out", 50);
     xbot_absolute_pose_pub = paramNh.advertise<xbot_msgs::AbsolutePose>("xb_pose_out", 50);
-    if(publish_debug) {
+    if (publish_debug) {
         dbg_expected_motion_vector = paramNh.advertise<geometry_msgs::Vector3>("debug_expected_motion_vector", 50);
         kalman_state = paramNh.advertise<xbot_positioning::KalmanState>("kalman_state", 50);
     }

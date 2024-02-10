@@ -15,7 +15,6 @@
 #include <kalman/ExtendedKalmanFilter.hpp>
 #include <kalman/UnscentedKalmanFilter.hpp>
 
-
 namespace xbot {
     namespace positioning {
         typedef double T;
@@ -26,42 +25,40 @@ namespace xbot {
 
         typedef xbot::positioning::PositionMeasurement<T> PositionMeasurementT;
         typedef xbot::positioning::OrientationMeasurement<T> OrientationMeasurementT;
-        typedef xbot::positioning::OrientationMeasurement2<T> OrientationMeasurementT2;
+        typedef xbot::positioning::OrientationMeasurement2<T> OrientationMeasurement2T;
         typedef xbot::positioning::SpeedMeasurement<T> SpeedMeasurementT;
         typedef xbot::positioning::PositionMeasurementModel<T> PositionModelT;
         typedef xbot::positioning::OrientationMeasurementModel<T> OrientationModelT;
-        typedef xbot::positioning::OrientationMeasurementModel2<T> OrientationModelT2;
+        typedef xbot::positioning::OrientationMeasurementModel2<T> OrientationModel2T;
         typedef xbot::positioning::SpeedMeasurementModel<T> SpeedModelT;
 
         class xbot_positioning_core {
 
-
-
         public:
             xbot_positioning_core();
 
-            const StateT &predict(double vx, double vr, double dt);
-            const StateT &updatePosition(double x, double y, double covariance = 500.0);
-            const StateT &updateOrientation(double theta, double covariance);
-            const StateT &updateOrientation2(double vx, double vy, double covariance);
-            const StateT &updateSpeed(double vx, double vr, double covariance);
+            const StateT &predict(double linearVelocity, double vroll, double vpitch, double vyaw, double dt);
+            const StateT &updatePosition(double x, double y, double z, double covariance);
+            const StateT &updateOrientation(double roll, double pitch, /*double yaw, */double covariance);
+            const StateT &updateOrientation2(double vx, double vy, double vz, double covariance);
+            const StateT &updateSpeed(double linearVelocity, double angularVelocity, double covariance);
             const StateT &getState();
-            void setState(double px, double py, double theta, double vx, double vr);
+            void setState(double px, double py, double pz, double roll, double pitch, double yaw, double linearVelocity, double angularVelocity);
             const Kalman::Covariance<StateT> &getCovariance();
-            void setAntennaOffset(double offset_x, double offset_y);
+            void setAntennaOffset(double offset_x, double offset_y,double offset_z);
 
         public:
             Kalman::ExtendedKalmanFilter<StateT> ekf{};
             SystemModelT sys{};
             PositionModelT p_model{};
             OrientationModelT o_model{};
-            OrientationModelT2 o2_model{};
+            OrientationModel2T o2_model{};
             SpeedModelT s_model{};
 
             ControlT u{};
             PositionMeasurementT pos_meas{};
             OrientationMeasurementT orient_meas{};
-            OrientationMeasurementT2 orient2_meas{};
+            OrientationMeasurement2T orient2_meas{};
             SpeedMeasurementT speed_meas{};
         };
     }

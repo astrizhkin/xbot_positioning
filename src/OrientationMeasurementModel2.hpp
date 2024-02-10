@@ -15,19 +15,22 @@ namespace xbot
  * @param T Numeric scalar type
  */
 template<typename T>
-class OrientationMeasurement2 : public Kalman::Vector<T, 2>
+class OrientationMeasurement2 : public Kalman::Vector<T, 3>
 {
 public:
-    KALMAN_VECTOR(OrientationMeasurement2, T, 2)
+    KALMAN_VECTOR(OrientationMeasurement2, T, 3)
     
     //! Orientation
     static constexpr size_t VX = 0;
     static constexpr size_t VY = 1;
+    static constexpr size_t VZ = 2;
 
     T vx()  const { return (*this)[ VX ]; }
     T& vx() { return (*this)[ VX ]; }
     T vy()  const { return (*this)[ VY ]; }
     T& vy() { return (*this)[ VY ]; }
+    T vz()  const { return (*this)[ VZ ]; }
+    T& vz() { return (*this)[ VZ ]; }
 
 };
 
@@ -75,8 +78,8 @@ public:
         M measurement;
         
         // Measurement is given by the actual robot orientation
-        measurement.vx() = x.vx() * std::cos(x.theta()) - (std::sin(x.theta()) * antenna_offset_x * x.vr()) - (std::cos(x.theta()) * antenna_offset_y * x.vr());
-        measurement.vy() = x.vx() * std::sin(x.theta()) + (std::cos(x.theta()) * antenna_offset_x * x.vr()) - (std::sin(x.theta()) * antenna_offset_y * x.vr());
+        measurement.vx() = x.sl() * std::cos(x.yaw()) - (std::sin(x.yaw()) * antenna_offset_x * x.sa()) - (std::cos(x.yaw()) * antenna_offset_y * x.sa());
+        measurement.vy() = x.sl() * std::sin(x.yaw()) + (std::cos(x.yaw()) * antenna_offset_x * x.sa()) - (std::sin(x.yaw()) * antenna_offset_y * x.sa());
 
         return measurement;
     }
@@ -84,15 +87,16 @@ public:
         void updateJacobians( const S& x )
         {
             this->H.setZero();
-            // partial derivative of meas.vx() w.r.t. x.theta()
+            // partial derivative of meas.vx() w.r.t. x.yaw()
 
-            this->H( M::VX, S::THETA ) = -x.vx() * std::sin(x.theta()) - antenna_offset_x * x.vr() * std::cos(x.theta()) + std::sin(x.theta()) *antenna_offset_y *x.vr();
-            this->H( M::VY, S::THETA ) = x.vx() * std::cos(x.theta())  - antenna_offset_x * x.vr() * std::sin(x.theta()) - std::cos(x.theta()) * antenna_offset_y * x.vr();
+            this->H( M::VX, S::YAW ) = -x.sl() * std::sin(x.yaw()) - antenna_offset_x * x.sa() * std::cos(x.yaw()) + std::sin(x.yaw()) * antenna_offset_y *x.sa();
+            this->H( M::VY, S::YAW ) = x.sl() * std::cos(x.yaw())  - antenna_offset_x * x.sa() * std::sin(x.yaw()) - std::cos(x.yaw()) * antenna_offset_y * x.sa();
         }
 
 
     double antenna_offset_x = 0;
     double antenna_offset_y = 0;
+    double antenna_offset_z = 0;
 };
 
 } // namespace Robot

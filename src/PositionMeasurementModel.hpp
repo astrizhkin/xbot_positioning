@@ -2,12 +2,11 @@
 #define KALMAN_EXAMPLES_ROBOT1_POSITIONMEASUREMENTMODEL_HPP_
 
 #include <kalman/LinearizedMeasurementModel.hpp>
+#include <tf2/LinearMath/Quaternion.h>
 #include "SystemModel.hpp"
 
-namespace xbot
-{
-namespace positioning
-{
+namespace xbot {
+namespace positioning {
 
 /**
  * @brief Measurement vector measuring the robot position
@@ -15,22 +14,26 @@ namespace positioning
  * @param T Numeric scalar type
  */
 template<typename T>
-class PositionMeasurement : public Kalman::Vector<T, 2>
-{
+class PositionMeasurement : public Kalman::Vector<T, 3> {
 public:
-    KALMAN_VECTOR(PositionMeasurement, T, 2)
+    KALMAN_VECTOR(PositionMeasurement, T, 3)
     
     //! X position of the GPS antenna
     static constexpr size_t X = 0;
     
     //! Y position of the GPS antenna
     static constexpr size_t Y = 1;
-    
+
+    //! Z position of the GPS antenna
+    static constexpr size_t Z = 2;
+
     T x_pos()       const { return (*this)[ X ]; }
     T y_pos()       const { return (*this)[ Y ]; }
+    T z_pos()       const { return (*this)[ Z ]; }
     
     T& x_pos()      { return (*this)[ X ]; }
     T& y_pos()      { return (*this)[ Y ]; }
+    T& z_pos()      { return (*this)[ Z ]; }
 };
 
 /**
@@ -48,8 +51,7 @@ public:
  *                       coveriace square root (SquareRootBase))
  */
 template<typename T, template<class> class CovarianceBase = Kalman::StandardBase>
-class PositionMeasurementModel : public Kalman::LinearizedMeasurementModel<State<T>, PositionMeasurement<T>, CovarianceBase>
-{
+class PositionMeasurementModel : public Kalman::LinearizedMeasurementModel<State<T>, PositionMeasurement<T>, CovarianceBase> {
 public:
     //! State type shortcut definition
     typedef  xbot::positioning::State<T> S;
@@ -65,8 +67,7 @@ public:
      * @param landmark2x The x-position of landmark 2
      * @param landmark2y The y-position of landmark 2
      */
-    PositionMeasurementModel()
-    {
+    PositionMeasurementModel() {
         // Setup noise jacobian. As this one is static, we can define it once
         // and do not need to update it dynamically
         this->V.setIdentity();
@@ -82,19 +83,31 @@ public:
      * @param [in] x The system state in current time-step
      * @returns The (predicted) sensor measurement for the system state
      */
-    M h(const S& x) const
-    {
+    M h(const S& x) const {
         M measurement;
 
         // Calculate the GPS antenna position given the current system state.
-        measurement.x_pos() = x.x_pos() + std::cos(x.theta()) * antenna_offset_x - std::sin(x.theta()) * antenna_offset_y;
-        measurement.y_pos() = x.y_pos() + std::sin(x.theta()) * antenna_offset_x + std::cos(x.theta()) * antenna_offset_y;
+        tf2::Vector3 antenna(antenna_offset_x, antenna_offset_y, antenna_offset_z);
+        antenna = antenna.rotate(tf2::Vector3(0,0,1),x.yaw());
+        antenna = antenna.rotate(tf2::Vector3(0,1,0),x.pitch());
+        antenna = antenna.rotate(tf2::Vector3(1,0,0),x.roll());
+        measurement.x_pos() = x.x_pos() + antenna.x();
+        measurement.y_pos() = x.y_pos() + antenna.y();
+        measurement.z_pos() = x.z_pos() + antenna.z();
 
+        //old implementation
+        //TODO: implement 3d shift using all 3 offsets
+        //TODO: should we use pitch and roll here?
+        //measurement.x_pos() = x.x_pos() + std::cos(x.yaw()) * antenna_offset_x - std::sin(x.yaw()) * antenna_offset_y;
+        //measurement.y_pos() = x.y_pos() + std::sin(x.yaw()) * antenna_offset_x + std::cos(x.yaw()) * antenna_offset_y;
+        //TODO: plus or minus????
+        //measurement.z_pos() = x.z_pos() + antenna_offset_z;
         return measurement;
     }
 
     double antenna_offset_x = 0;
     double antenna_offset_y = 0;
+    double antenna_offset_z = 0;
 
 protected:
 
@@ -113,8 +126,7 @@ protected:
      * @param x The current system state around which to linearize
      * @param u The current system control input
      */
-    void updateJacobians( const S& x )
-    {
+    void updateJacobians( const S& x ) {
       this->H.setIdentity();
     }
 };

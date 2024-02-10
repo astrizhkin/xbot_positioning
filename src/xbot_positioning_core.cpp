@@ -5,17 +5,21 @@
 
 #include "xbot_positioning_core.h"
 
-
-const xbot::positioning::StateT &xbot::positioning::xbot_positioning_core::predict(double vx, double vr, double dt) {
+const xbot::positioning::StateT &
+xbot::positioning::xbot_positioning_core::predict(double linearVelocity, double vroll, double vpitch, double vyaw, double dt) {
     sys.setDt(dt);
-    u.v() = vx;
-    u.dtheta() = vr;
+    u.v() = linearVelocity;
+    u.droll() = vroll;
+    u.dpitch() = vpitch;
+    u.dyaw() = vyaw;
     return ekf.predict(sys, u);
 }
 
-const xbot::positioning::StateT &xbot::positioning::xbot_positioning_core::updatePosition(double x, double y, double covariance) {
+const xbot::positioning::StateT &
+xbot::positioning::xbot_positioning_core::updatePosition(double x, double y, double z, double covariance) {
     pos_meas.x_pos() = x;
     pos_meas.y_pos() = y;
+    pos_meas.z_pos() = z;
 
     Kalman::Covariance<PositionMeasurementT> c;
     c.setIdentity();
@@ -27,8 +31,10 @@ const xbot::positioning::StateT &xbot::positioning::xbot_positioning_core::updat
 }
 
 const xbot::positioning::StateT &
-xbot::positioning::xbot_positioning_core::updateOrientation(double theta, double covariance) {
-    orient_meas.theta() = theta;
+xbot::positioning::xbot_positioning_core::updateOrientation(double roll, double pitch, /*double yaw, */double covariance) {
+    orient_meas.roll() = roll;
+    orient_meas.pitch() = pitch;
+    //orient_meas.yaw() = yaw;
     Kalman::Covariance<OrientationMeasurementT> c;
     c.setIdentity();
     c *= covariance;
@@ -39,11 +45,12 @@ xbot::positioning::xbot_positioning_core::updateOrientation(double theta, double
 }
 
 const xbot::positioning::StateT &
-xbot::positioning::xbot_positioning_core::updateOrientation2(double vx, double vy, double covariance) {
+xbot::positioning::xbot_positioning_core::updateOrientation2(double vx, double vy, double vz, double covariance) {
     orient2_meas.vx() = vx;
     orient2_meas.vy() = vy;
+    orient2_meas.vz() = vz;
 
-    Kalman::Covariance<OrientationMeasurementT2> c;
+    Kalman::Covariance<OrientationMeasurement2T> c;
     c.setIdentity();
     c *= covariance;
 
@@ -51,16 +58,17 @@ xbot::positioning::xbot_positioning_core::updateOrientation2(double vx, double v
 
     return ekf.update(o2_model, orient2_meas);
 }
+
 const xbot::positioning::StateT &
-xbot::positioning::xbot_positioning_core::updateSpeed(double vx, double vr, double covariance) {
-    speed_meas.vx() = vx;
-    speed_meas.vr() = vr;
-//
+xbot::positioning::xbot_positioning_core::updateSpeed(double linearVelocity, double angularVelocity, double covariance) {
+    speed_meas.sl() = linearVelocity;
+    speed_meas.sa() = angularVelocity;
+
 //    Kalman::Covariance<SpeedMeasurementT> c;
 //    c.setIdentity();
 //    c *= covariance;
-//
-//    sm.setCovariance(c);
+
+//    s_model.setCovariance(c);
 
     return ekf.update(s_model, speed_meas);
 }
@@ -78,25 +86,29 @@ xbot::positioning::xbot_positioning_core::xbot_positioning_core() {
 //    c.setIdentity();
 //    c *= 0.001;
 //    sys.setCovariance(c);
-    setState(0,0,0,0,0);
+    setState(0,0,0,0,0,0,0,0);
 }
 
-void xbot::positioning::xbot_positioning_core::setState(double px, double py, double theta, double vx, double vr) {
+void xbot::positioning::xbot_positioning_core::setState(double px, double py, double pz, double roll, double pitch, double yaw, double linearVelocity, double angularVelocity) {
     StateT x;
     x.setZero();
     x.x() = px;
     x.y() = py;
-    x.theta() = theta;
-    x.vx() = vx;
-    x.vr() = vr;
+    x.z() = pz;
+    x.roll() = roll;
+    x.pitch() = pitch;
+    x.yaw() = yaw;
+    x.sl() = linearVelocity;
+    x.sa() = angularVelocity;
     this->ekf.init(x);
     Kalman::Covariance<StateT> c;
     c.setIdentity();
     this->ekf.setCovariance(c);
 }
 
-void xbot::positioning::xbot_positioning_core::setAntennaOffset(double offset_x, double offset_y) {
+void xbot::positioning::xbot_positioning_core::setAntennaOffset(double offset_x, double offset_y,double offset_z) {
     p_model.antenna_offset_x = o2_model.antenna_offset_x = offset_x;
     p_model.antenna_offset_y = o2_model.antenna_offset_y = offset_y;
+    p_model.antenna_offset_z = o2_model.antenna_offset_z = offset_z;
 }
 

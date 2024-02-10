@@ -4,10 +4,8 @@
 #include <kalman/LinearizedMeasurementModel.hpp>
 #include "SystemModel.hpp"
 
-namespace xbot
-{
-namespace positioning
-{
+namespace xbot {
+    namespace positioning {
 
 /**
  * @brief Measurement vector measuring the robot position
@@ -15,19 +13,18 @@ namespace positioning
  * @param T Numeric scalar type
  */
 template<typename T>
-class SpeedMeasurement : public Kalman::Vector<T, 2>
-{
+class SpeedMeasurement : public Kalman::Vector<T, 2> {
 public:
     KALMAN_VECTOR(SpeedMeasurement, T, 2)
 
-    static constexpr size_t VX = 0;
-    static constexpr size_t VR = 1;
+    static constexpr size_t SL = 0;
+    static constexpr size_t SA = 1;
     
-    T vx()       const { return (*this)[ VX ]; }
-    T vr()       const { return (*this)[ VR ]; }
+    T sl()       const { return (*this)[ SL ]; }
+    T sa()       const { return (*this)[ SA ]; }
     
-    T& vx()      { return (*this)[ VX ]; }
-    T& vr()      { return (*this)[ VR ]; }
+    T& sl()      { return (*this)[ SL ]; }
+    T& sa()      { return (*this)[ SA ]; }
 };
 
 /**
@@ -45,8 +42,7 @@ public:
  *                       coveriace square root (SquareRootBase))
  */
 template<typename T, template<class> class CovarianceBase = Kalman::StandardBase>
-class SpeedMeasurementModel : public Kalman::LinearizedMeasurementModel<State<T>, SpeedMeasurement<T>, CovarianceBase>
-{
+class SpeedMeasurementModel : public Kalman::LinearizedMeasurementModel<State<T>, SpeedMeasurement<T>, CovarianceBase> {
 public:
     //! State type shortcut definition
     typedef  xbot::positioning::State<T> S;
@@ -62,16 +58,14 @@ public:
      * @param landmark2x The x-position of landmark 2
      * @param landmark2y The y-position of landmark 2
      */
-    SpeedMeasurementModel()
-    {
+    SpeedMeasurementModel() {
         // Setup noise jacobian. As this one is static, we can define it once
         // and do not need to update it dynamically
         this->V.setIdentity();
-
-
         this->H.setZero();
-        this->H(M::VX, S::VX) = 1;
-        this->H(M::VR, S::VR) = 1;
+
+        this->H(M::SL, S::SL) = 1;
+        this->H(M::SA, S::SA) = 1;
     }
     
     /**
@@ -84,12 +78,11 @@ public:
      * @param [in] x The system state in current time-step
      * @returns The (predicted) sensor measurement for the system state
      */
-    M h(const S& x) const
-    {
+    M h(const S& x) const {
         M measurement;
 
-        measurement.vx() = x.vx();
-        measurement.vr() = x.vr();
+        measurement.sl() = x.sl();
+        measurement.sa() = x.sa();
 
         return measurement;
     }
@@ -112,8 +105,7 @@ protected:
      * @param x The current system state around which to linearize
      * @param u The current system control input
      */
-    void updateJacobians( const S& x )
-    {
+    void updateJacobians( const S& x ) {
     }
 };
 
