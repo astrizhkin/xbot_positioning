@@ -126,9 +126,6 @@ int bias_samples_count;
   estimate_timestamp_ = msg.header.stamp;
 }*/
 
-double gyro_pitch = 0.0;
-double gyro_roll = 0.0;
-
 void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     tf2::Vector3 imu_accel(msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z);
     tf2::Vector3 imu_gyro(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
@@ -172,51 +169,27 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     imu_gyro -= gyro_bias;
 
     //compute pitch and roll (it includes acceleration component unfortunately)
+    
     //pitch angle around y axis
     tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
     tf2::Vector3 pitch_cross = normal_gravity_vector.cross(pitch_vector);
     double pitch_angle = normal_gravity_vector.angle(pitch_vector);
-    if (pitch_cross.y() < 0) {
-        pitch_angle = -pitch_angle;
-    }
+    if (pitch_cross.y() < 0) pitch_angle = -pitch_angle;
+    
     //roll angle around x axis 
     tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
     tf2::Vector3 roll_cross = normal_gravity_vector.cross(roll_vector);
     double roll_angle = normal_gravity_vector.angle(roll_vector);
     //it works but why we check here for the positive to reverse? 
-    if (roll_cross.x() > 0) {
-        roll_angle = -roll_angle;
-    }
-
-    gyro_pitch+= imu_gyro.y()*dt;
-    gyro_roll+=imu_gyro.x()*dt;
-
-    //TODO add pitch and roll to EKF
-    //pitch_angle = core.updatePitch(pitch_angle);
-    //roll_angle = core.updateRoll(roll_angle);
-
+    if (roll_cross.x() > 0) roll_angle = -roll_angle;
+    
+    //update EKF state
     core.predict(linearVelocity, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
-    //TODO: we don't know actual yaw... what should we do?
-    core.updateOrientation(roll_angle, pitch_angle, /*core.getState().yaw(),*/ 5000.0);
+    //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
+    core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocity, imu_gyro.z(),0.01);
 
-    //debug section
-    //first calculate angle to the normal calibrated gravity
-    double angle_to_normal_gravity = imu_accel.angle(normal_gravity_vector);
-    if (angle_to_normal_gravity > 0.05) {
-        //ROS_INFO_STREAM("[xbot_positioning] pitch cross " << pitch_cross.x() << ", " << pitch_cross.y() << ", " << pitch_cross.z());
-        //ROS_INFO_STREAM("[xbot_positioning] roll cross " << roll_cross.x() << ", " << roll_cross.y() << ", " << roll_cross.z());
-        //ROS_INFO_STREAM("[xbot_positioning] normal gravity angle " << angle_to_normal_gravity << " pitch " << pitch_angle << " roll " << roll_angle);
-        //ROS_INFO_STREAM("[xbot_positioning] calibrated IMU accel " << imu_accel.x() << ", " << imu_accel.y() << ", " << imu_accel.z());
-
-        if( abs(pitch_angle) > 0.2 ) {
-            ROS_INFO_STREAM("[xbot_positioning] pitch " << pitch_angle << " gyro " << gyro_pitch << " ekf "<< x.pitch());
-        }
-        if( abs(roll_angle) > 0.2 ) {
-            ROS_INFO_STREAM("[xbot_positioning] roll " << roll_angle << " gyro " << gyro_roll << " ekf " << x.roll());
-        }
-    }
-
+    //build messages
     odometry.header.stamp = ros::Time::now();
     odometry.header.seq++;
     odometry.header.frame_id = "map";
