@@ -68,9 +68,9 @@ bool publish_debug;
 // Antenna offset (offset between point of rotation and antenna)
 double antenna_offset_x, antenna_offset_y, antenna_offset_z;
 
-nav_msgs::Odometry odometry;
+nav_msgs::Odometry odometry3D;
 xbot_positioning::KalmanState state_msg;
-xbot_msgs::AbsolutePose xb_absolute_pose_msg;
+xbot_msgs::AbsolutePose xb_absolute_pose_msg2D;
 
 bool gps_enabled = true;
 int gps_outlier_count = 0;
@@ -188,28 +188,30 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocity, imu_gyro.z(),0.01);
+    //get result quaternions
+    tf2::Quaternion q3D(x.roll(), x.pitch(), x.yaw());
+    tf2::Quaternion q2D(0, 0, x.yaw());
 
     //build messages
-    odometry.header.stamp = ros::Time::now();
-    odometry.header.seq++;
-    odometry.header.frame_id = "map";
-    odometry.child_frame_id = "base_link";
-    odometry.pose.pose.position.x = x.x_pos();
-    odometry.pose.pose.position.y = x.y_pos();
-    odometry.pose.pose.position.z = x.z_pos();
-    tf2::Quaternion q(x.roll(), x.pitch(), x.yaw());
-    odometry.pose.pose.orientation = tf2::toMsg(q);
+    odometry3D.header.stamp = ros::Time::now();
+    odometry3D.header.seq++;
+    odometry3D.header.frame_id = "map";
+    odometry3D.child_frame_id = "base_link";
+    odometry3D.pose.pose.position.x = x.x_pos();
+    odometry3D.pose.pose.position.y = x.y_pos();
+    odometry3D.pose.pose.position.z = x.z_pos();
+    odometry3D.pose.pose.orientation = tf2::toMsg(q3D);
 
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header = odometry.header;
-    odom_trans.child_frame_id = odometry.child_frame_id;
-    odom_trans.transform.translation.x = odometry.pose.pose.position.x;
-    odom_trans.transform.translation.y = odometry.pose.pose.position.y;
-    odom_trans.transform.translation.z = odometry.pose.pose.position.z;
-    odom_trans.transform.rotation = odometry.pose.pose.orientation;
+    geometry_msgs::TransformStamped odom_trans2D;
+    odom_trans2D.header = odometry3D.header;
+    odom_trans2D.child_frame_id = odometry3D.child_frame_id;
+    odom_trans2D.transform.translation.x = odometry3D.pose.pose.position.x;
+    odom_trans2D.transform.translation.y = odometry3D.pose.pose.position.y;
+    odom_trans2D.transform.translation.z = 0; //odometry.pose.pose.position.z;
+    odom_trans2D.transform.rotation = tf2::toMsg(q2D);//odometry.pose.pose.orientation;
 
     static tf2_ros::TransformBroadcaster transform_broadcaster;
-    transform_broadcaster.sendTransform(odom_trans);
+    transform_broadcaster.sendTransform(odom_trans2D);
 
     if (publish_debug) {
         auto state = core.getState();
@@ -225,36 +227,39 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
         kalman_state.publish(state_msg);
     }
 
-    odometry_pub.publish(odometry);
+    odometry_pub.publish(odometry3D);
 
-    xb_absolute_pose_msg.header = odometry.header;
-    xb_absolute_pose_msg.sensor_stamp = 0;
-    xb_absolute_pose_msg.received_stamp = 0;
-    xb_absolute_pose_msg.source = xbot_msgs::AbsolutePose::SOURCE_SENSOR_FUSION;
-    xb_absolute_pose_msg.flags = xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_DEAD_RECKONING;
+    xb_absolute_pose_msg2D.header = odometry3D.header;
+    xb_absolute_pose_msg2D.sensor_stamp = 0;
+    xb_absolute_pose_msg2D.received_stamp = 0;
+    xb_absolute_pose_msg2D.source = xbot_msgs::AbsolutePose::SOURCE_SENSOR_FUSION;
+    xb_absolute_pose_msg2D.flags = xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_DEAD_RECKONING;
 
-    xb_absolute_pose_msg.orientation_valid = true;
+    xb_absolute_pose_msg2D.orientation_valid = true;
     // TODO: send motion vector
-    xb_absolute_pose_msg.motion_vector_valid = false;
+    xb_absolute_pose_msg2D.motion_vector_valid = false;
     // TODO: set real value from kalman filter, not the one from the GPS.
     if (has_gps) {
-        xb_absolute_pose_msg.position_accuracy = last_gps.position_accuracy;
+        xb_absolute_pose_msg2D.position_accuracy = last_gps.position_accuracy;
     } else {
-        xb_absolute_pose_msg.position_accuracy = 999;
+        xb_absolute_pose_msg2D.position_accuracy = 999;
     }
     if ((ros::Time::now() - last_gps_time).toSec() < 10.0) {
-        xb_absolute_pose_msg.flags |= xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE;
+        xb_absolute_pose_msg2D.flags |= xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE;
     } else {
         // on GPS timeout, we set accuracy to 0.
-        xb_absolute_pose_msg.position_accuracy = 999;
+        xb_absolute_pose_msg2D.position_accuracy = 999;
     }
     // TODO: set real value
-    xb_absolute_pose_msg.orientation_accuracy = 0.01;
-    xb_absolute_pose_msg.pose = odometry.pose;
-    xb_absolute_pose_msg.vehicle_heading = x.yaw();
-    xb_absolute_pose_msg.motion_heading = x.yaw();
+    xb_absolute_pose_msg2D.orientation_accuracy = 0.01;
+    xb_absolute_pose_msg2D.pose.pose.position.x = odometry3D.pose.pose.position.x;
+    xb_absolute_pose_msg2D.pose.pose.position.y = odometry3D.pose.pose.position.y;
+    xb_absolute_pose_msg2D.pose.pose.position.z = 0;
+    xb_absolute_pose_msg2D.pose.pose.orientation = tf2::toMsg(q2D);
+    xb_absolute_pose_msg2D.vehicle_heading = x.yaw();
+    xb_absolute_pose_msg2D.motion_heading = x.yaw();
 
-    xbot_absolute_pose_pub.publish(xb_absolute_pose_msg);
+    xbot_absolute_pose_pub.publish(xb_absolute_pose_msg2D);
 
     last_imu = *msg;
 }
