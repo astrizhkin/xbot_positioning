@@ -139,8 +139,9 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
                 gyro_calibration_start = msg->header.stamp;
                 gyro_bias.setValue(0.0,0.0,0.0);
                 if(!skip_accelermoter_calibration) {
-                    ROS_WARN_STREAM("[xbot_positioning] Skipping acelermoter calibration.");
                     accel_bias.setValue(0.0,0.0,0.0);
+                } else {
+                    ROS_WARN_STREAM("[xbot_positioning] Skipping acelermoter calibration.");
                 }
             }
             gyro_bias += imu_gyro;
