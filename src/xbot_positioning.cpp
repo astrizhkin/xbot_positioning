@@ -82,6 +82,7 @@ tf2::Vector3 normal_gravity_vector(0.0, 0.0, 9.81);
 tf2::Vector3 accel_bias(0.0, 0.0, 0.0);
 tf2::Vector3 gyro_bias(0.0, 0.0, 0.0);
 int bias_samples_count;
+bool skip_accelermoter_calibration = false;
 
 /*void OdomPredictor::integrateIMUData(const sensor_msgs::Imu& msg) {
   if (!has_imu_meas) {
@@ -134,13 +135,18 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     if (!has_gyro) {
         if (!skip_gyro_calibration) {
             if (bias_samples_count == 0) {
-                ROS_INFO_STREAM("[xbot_positioning] Started IMU calibration. Robot must be in horizontal position.");
+                ROS_WARN_STREAM("[xbot_positioning] Started IMU calibration. Robot must be in horizontal position.");
                 gyro_calibration_start = msg->header.stamp;
                 gyro_bias.setValue(0.0,0.0,0.0);
-                accel_bias.setValue(0.0,0.0,0.0);
+                if(!skip_accelermoter_calibration) {
+                    ROS_WARN_STREAM("[xbot_positioning] Skipping acelermoter calibration.");
+                    accel_bias.setValue(0.0,0.0,0.0);
+                }
             }
             gyro_bias += imu_gyro;
-            accel_bias += imu_accel;
+            if(!skip_accelermoter_calibration) {
+                accel_bias += imu_accel;
+            }
             bias_samples_count++;
             if ((msg->header.stamp - gyro_calibration_start).toSec() < 7) {
                 last_imu = *msg;
@@ -149,11 +155,15 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
             has_gyro = true;
             if (bias_samples_count > 0) {
                 gyro_bias /= bias_samples_count;
-                accel_bias /= bias_samples_count;
-                accel_bias -= normal_gravity_vector;
+                if(!skip_accelermoter_calibration) {
+                    accel_bias /= bias_samples_count;
+                    accel_bias -= normal_gravity_vector;
+                }
             } else {
                 gyro_bias.setValue(0.0,0.0,0.0);
-                accel_bias.setValue(0.0,0.0,0.0);
+                if(!skip_accelermoter_calibration) {
+                    accel_bias.setValue(0.0,0.0,0.0);
+                }
             }
             bias_samples_count = 0;
             ROS_INFO_STREAM("[xbot_positioning] Calibrated IMU bias gyro " << gyro_bias.x() << ", " << gyro_bias.y() << ", " << gyro_bias.z() << " accel " << accel_bias.x() << ", " << accel_bias.y() << ", " << accel_bias.z());
@@ -348,7 +358,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
 
     double distance_to_last_gps = (last_gps_pos - gps_pos).length();
 
-    if (distance_to_last_gps < 5.0) {
+    if (distance_to_last_gps < 2.0) {
         // inlier, we treat it normally
         // store the gps as last
         last_gps = *msg;
@@ -367,7 +377,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         } else if (has_gps) {
             // gps was valid before, we apply the filter
             //ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 500.0);
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 2500.0);
             if (publish_debug) {
                 auto m = core.o2_model.h(core.ekf.getState());
                 geometry_msgs::Vector3 dbg;
@@ -431,9 +441,21 @@ int main(int argc, char **argv) {
     paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
     paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
 
+    double accel_bias_x = 0.0, accel_bias_y = 0.0, accel_bias_z = 0.0;
+    paramNh.param("accel_bias_x", accel_bias_x, 0.0);
+    paramNh.param("accel_bias_y", accel_bias_y, 0.0);
+    paramNh.param("accel_bias_z", accel_bias_z, 0.0);
+    if(accel_bias_x!=0.0 || accel_bias_y!=0.0 || accel_bias_z!=0.0){
+        ROS_INFO_STREAM("[xbot_positioning] Will use configured accelerometer bias: " << accel_bias_x << ", " << accel_bias_y << ", " << accel_bias_z);
+        accel_bias.setValue(accel_bias_x,accel_bias_y,accel_bias_z);
+        skip_accelermoter_calibration = true;
+    }
+    //paramNh.param("accel_bias_y", accel_bias., 0.0);
+    //paramNh.param("accel_bias_z", accel_bias., 0.0);
+
     core.setAntennaOffset(antenna_offset_x, antenna_offset_y, antenna_offset_z);
 
-    ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y);
+    ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y << ", " << antenna_offset_z);
 
     if (gyro_bias_z != 0.0 && skip_gyro_calibration) {
         gyro_bias.setZ(gyro_bias_z);
