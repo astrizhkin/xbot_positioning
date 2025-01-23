@@ -54,7 +54,8 @@ ros::Time gyro_calibration_start;
 //double accel_offset_z;
 
 // Current speed calculated by wheel ticks
-double linearVelocity = 0.0;
+double linearVelocityWheels = 0.0;
+//double angularVelocityWheels = 0.0;
 
 // Min speed for motion vector to be fed into kalman filter
 double min_speed = 0.0;
@@ -195,10 +196,10 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     if (roll_cross.x() > 0) roll_angle = -roll_angle;
     
     //update EKF state
-    core.predict(linearVelocity, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
+    core.predict(linearVelocityWheels, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
     //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
-    auto x = core.updateSpeed(linearVelocity, imu_gyro.z(),0.01);
+    auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
     //get result quaternions
     tf2::Quaternion q3D(x.roll(), x.pitch(), x.yaw());
     tf2::Quaternion q2D(0, 0, x.yaw());
@@ -212,6 +213,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     odometry3D.pose.pose.position.y = x.y_pos();
     odometry3D.pose.pose.position.z = x.z_pos();
     odometry3D.pose.pose.orientation = tf2::toMsg(q3D);
+    odometry3D.twist.twist.linear.x = linearVelocityWheels;
+    //odometry3D.twist.twist.angular.z = angularVelocityWheels;
 
     geometry_msgs::TransformStamped odom_trans2D;
     odom_trans2D.header = odometry3D.header;
@@ -299,7 +302,9 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     //}
 
     double d_center = (d_wheel_l + d_wheel_r) / 2.0;
-    linearVelocity = d_center / dt;
+    linearVelocityWheels = d_center / dt;
+    //here we can calculate angular velocity from wheels
+
     //ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
@@ -378,7 +383,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         } else if (has_gps) {
             // gps was valid before, we apply the filter
             //ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 2500.0);
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 500.0);
             if (publish_debug) {
                 auto m = core.o2_model.h(core.ekf.getState());
                 geometry_msgs::Vector3 dbg;
@@ -413,7 +418,8 @@ int main(int argc, char **argv) {
 
     has_gps = false;
     gps_enabled = true;
-    linearVelocity = 0.0;
+    linearVelocityWheels = 0.0;
+    //angularVelocityWheels = 0.0;
     has_gyro = false;
     has_ticks = false;
     gyro_bias.setValue(0.0,0.0,0.0);
