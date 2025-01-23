@@ -3,24 +3,24 @@
 // Copyright (c) 2022 Clemens Elflein. All rights reserved.
 //
 
-#include "SystemModel.hpp"
-
-#include "ros/ros.h"
-
-#include <sensor_msgs/Imu.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <nav_msgs/Odometry.h>
-#include "xbot_msgs/AbsolutePose.h"
-#include <tf2_ros/transform_broadcaster.h>
+#include <sensor_msgs/Imu.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+
+#include "SystemModel.hpp"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "geometry_msgs/TwistWithCovarianceStamped.h"
-#include "xbot_positioning_core.h"
+#include "ros/ros.h"
+#include "xbot_msgs/AbsolutePose.h"
 #include "xbot_msgs/WheelTick.h"
-#include "xbot_positioning/KalmanState.h"
 #include "xbot_positioning/GPSControlSrv.h"
+#include "xbot_positioning/KalmanState.h"
 #include "xbot_positioning/SetPoseSrv.h"
+#include "xbot_positioning_core.h"
 
 ros::Publisher odometry_pub;
 ros::Publisher xbot_absolute_pose_pub;
@@ -294,10 +294,10 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     double d_wheel_l = (rl_delta + fl_delta) * msg->wheel_radius / 2;
     double d_wheel_r = (rr_delta + fr_delta) * msg->wheel_radius / 2;
 
-    //if(msg->wheel_direction_rl) {
+    //if (msg->wheel_direction_rl) {
     //    d_wheel_l *= -1.0;
     //}
-    //if(msg->wheel_direction_rr) {
+    //if (msg->wheel_direction_rr) {
     //    d_wheel_r *= -1.0;
     //}
 
@@ -308,6 +308,10 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     //ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
+}
+
+void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
+    linearVelocityWheels = msg->twist.linear.x;
 }
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
@@ -477,6 +481,7 @@ int main(int argc, char **argv) {
     }
 
     ros::Subscriber imu_sub = paramNh.subscribe("imu_in", 10, onImu);
+    ros::Subscriber twist_sub = paramNh.subscribe("twist_in", 10, onTwistIn);
     ros::Subscriber pose_sub = paramNh.subscribe("xb_pose_in", 10, onPose);
     ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
 
