@@ -22,7 +22,8 @@
 #include "xbot_positioning/SetPoseSrv.h"
 #include "xbot_positioning_core.h"
 
-ros::Publisher odometry_pub;
+ros::Publisher odometry_3d_pub;
+ros::Publisher odometry_2d_pub;
 ros::Publisher xbot_absolute_pose_pub;
 
 // Debug Publishers
@@ -69,9 +70,7 @@ bool publish_debug;
 // Antenna offset (offset between point of rotation and antenna)
 double antenna_offset_x, antenna_offset_y, antenna_offset_z;
 
-nav_msgs::Odometry odometry3D;
 xbot_positioning::KalmanState state_msg;
-xbot_msgs::AbsolutePose xb_absolute_pose_msg2D;
 
 bool gps_enabled = true;
 int gps_outlier_count = 0;
@@ -201,31 +200,72 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
     //get result quaternions
-    tf2::Quaternion q3D(x.roll(), x.pitch(), x.yaw());
-    tf2::Quaternion q2D(0, 0, x.yaw());
+    tf2::Quaternion q_3d(x.roll(), x.pitch(), x.yaw());
+    tf2::Quaternion q_2d(0, 0, x.yaw());
 
+    //Two quaternions from the same frame, q_2d and q_3d. 
+    //to find the relative rotation, q_r, to go from q_2d to q_3d:
+    //q_3d = q_r*q_2d
+    //solve for q_r similarly to solving a matrix equation. 
+    //Invert q_1 and right-multiply both sides. Again, the order of multiplication is important:
+    //q_r = q_3d*q_2d_inverse
+
+    tf2::Quaternion q_2d_to_3d = q_3d*q_2d.inverse();
+
+    // This represents an estimate of a position and velocity in free space.  
+    // The pose in this message should be specified in the coordinate frame given by header.frame_id.
+    // The twist in this message should be specified in the coordinate frame given by the child_frame_id
+    nav_msgs::Odometry odometry_2d;
+    odometry_2d.header.stamp = ros::Time::now();
+    odometry_2d.header.seq++;
+    odometry_2d.header.frame_id = "map";
+    odometry_2d.child_frame_id = "base_footprint";
+    odometry_2d.pose.pose.position.x = x.x_pos();
+    odometry_2d.pose.pose.position.y = x.y_pos();
+    odometry_2d.pose.pose.position.z = 0;
+    odometry_2d.pose.pose.orientation = tf2::toMsg(q_2d);
+    odometry_2d.twist.twist.linear.x = linearVelocityWheels * cos(x.pitch());//projected to 2d linearVelocityWheels
+    //odometry_2d.twist.twist.angular.z = angularVelocityWheels;//correct. angularVelocityWheels 3d = 2d
     //build messages
-    odometry3D.header.stamp = ros::Time::now();
-    odometry3D.header.seq++;
-    odometry3D.header.frame_id = "map";
-    odometry3D.child_frame_id = "base_link";
-    odometry3D.pose.pose.position.x = x.x_pos();
-    odometry3D.pose.pose.position.y = x.y_pos();
-    odometry3D.pose.pose.position.z = x.z_pos();
-    odometry3D.pose.pose.orientation = tf2::toMsg(q3D);
-    odometry3D.twist.twist.linear.x = linearVelocityWheels;
-    //odometry3D.twist.twist.angular.z = angularVelocityWheels;
 
-    geometry_msgs::TransformStamped odom_trans2D;
-    odom_trans2D.header = odometry3D.header;
-    odom_trans2D.child_frame_id = odometry3D.child_frame_id;
-    odom_trans2D.transform.translation.x = odometry3D.pose.pose.position.x;
-    odom_trans2D.transform.translation.y = odometry3D.pose.pose.position.y;
-    odom_trans2D.transform.translation.z = 0; //odometry.pose.pose.position.z;
-    odom_trans2D.transform.rotation = tf2::toMsg(q2D);//odometry.pose.pose.orientation;
+    // This expresses a transform from coordinate frame header.frame_id
+    // to the coordinate frame child_frame_id
+    geometry_msgs::TransformStamped base_footprint_transform_2d;
+    base_footprint_transform_2d.header = odometry_2d.header;
+    base_footprint_transform_2d.child_frame_id = odometry_2d.child_frame_id;
+    base_footprint_transform_2d.transform.translation.x = odometry_2d.pose.pose.position.x;
+    base_footprint_transform_2d.transform.translation.y = odometry_2d.pose.pose.position.y;
+    base_footprint_transform_2d.transform.translation.z = 0;
+    base_footprint_transform_2d.transform.rotation = tf2::toMsg(q_2d);//odometry.pose.pose.orientation;
+
+    // This represents an estimate of a position and velocity in free space.  
+    // The pose in this message should be specified in the coordinate frame given by header.frame_id.
+    // The twist in this message should be specified in the coordinate frame given by the child_frame_id
+    nav_msgs::Odometry odometry_3d;
+    odometry_3d.header.stamp = ros::Time::now();
+    odometry_3d.header.seq++;
+    odometry_3d.header.frame_id = "map";
+    odometry_3d.child_frame_id = "base_link";
+    odometry_3d.pose.pose.position.x = x.x_pos();
+    odometry_3d.pose.pose.position.y = x.y_pos();
+    odometry_3d.pose.pose.position.z = x.z_pos();
+    odometry_3d.pose.pose.orientation = tf2::toMsg(q_3d);
+    odometry_3d.twist.twist.linear.x = linearVelocityWheels;
+    //odometry_3d.twist.twist.angular.z = angularVelocityWheels;
+
+    // This expresses a transform from coordinate frame header.frame_id
+    // to the coordinate frame child_frame_id
+    geometry_msgs::TransformStamped base_link_transform_3d;
+    base_link_transform_3d.header.frame_id = "base_footprint";
+    base_link_transform_3d.child_frame_id = "base_link";
+    base_link_transform_3d.transform.translation.x = 0;
+    base_link_transform_3d.transform.translation.y = 0;
+    base_link_transform_3d.transform.translation.z = x.z_pos();
+    base_link_transform_3d.transform.rotation = tf2::toMsg(q_2d_to_3d);
 
     static tf2_ros::TransformBroadcaster transform_broadcaster;
-    transform_broadcaster.sendTransform(odom_trans2D);
+    transform_broadcaster.sendTransform(base_footprint_transform_2d);//it should be transform from map to base_footprint
+    transform_broadcaster.sendTransform(base_link_transform_3d);//it should be transform base_footprint to base_link
 
     if (publish_debug) {
         auto state = core.getState();
@@ -241,39 +281,41 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
         kalman_state.publish(state_msg);
     }
 
-    odometry_pub.publish(odometry3D);
+    odometry_3d_pub.publish(odometry_3d);
+    odometry_2d_pub.publish(odometry_2d);
 
-    xb_absolute_pose_msg2D.header = odometry3D.header;
-    xb_absolute_pose_msg2D.sensor_stamp = 0;
-    xb_absolute_pose_msg2D.received_stamp = 0;
-    xb_absolute_pose_msg2D.source = xbot_msgs::AbsolutePose::SOURCE_SENSOR_FUSION;
-    xb_absolute_pose_msg2D.flags = xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_DEAD_RECKONING;
+    xbot_msgs::AbsolutePose xb_absolute_pose_msg_2d;
+    xb_absolute_pose_msg_2d.header = odometry_2d.header;
+    xb_absolute_pose_msg_2d.sensor_stamp = 0;
+    xb_absolute_pose_msg_2d.received_stamp = 0;
+    xb_absolute_pose_msg_2d.source = xbot_msgs::AbsolutePose::SOURCE_SENSOR_FUSION;
+    xb_absolute_pose_msg_2d.flags = xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_DEAD_RECKONING;
 
-    xb_absolute_pose_msg2D.orientation_valid = true;
+    xb_absolute_pose_msg_2d.orientation_valid = true;
     // TODO: send motion vector
-    xb_absolute_pose_msg2D.motion_vector_valid = false;
+    xb_absolute_pose_msg_2d.motion_vector_valid = false;
     // TODO: set real value from kalman filter, not the one from the GPS.
     if (has_gps) {
-        xb_absolute_pose_msg2D.position_accuracy = last_gps.position_accuracy;
+        xb_absolute_pose_msg_2d.position_accuracy = last_gps.position_accuracy;
     } else {
-        xb_absolute_pose_msg2D.position_accuracy = 999;
+        xb_absolute_pose_msg_2d.position_accuracy = 999;
     }
     if ((ros::Time::now() - last_gps_time).toSec() < 10.0) {
-        xb_absolute_pose_msg2D.flags |= xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE;
+        xb_absolute_pose_msg_2d.flags |= xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE;
     } else {
         // on GPS timeout, we set accuracy to 0.
-        xb_absolute_pose_msg2D.position_accuracy = 999;
+        xb_absolute_pose_msg_2d.position_accuracy = 999;
     }
     // TODO: set real value
-    xb_absolute_pose_msg2D.orientation_accuracy = 0.01;
-    xb_absolute_pose_msg2D.pose.pose.position.x = odometry3D.pose.pose.position.x;
-    xb_absolute_pose_msg2D.pose.pose.position.y = odometry3D.pose.pose.position.y;
-    xb_absolute_pose_msg2D.pose.pose.position.z = 0;
-    xb_absolute_pose_msg2D.pose.pose.orientation = tf2::toMsg(q2D);
-    xb_absolute_pose_msg2D.vehicle_heading = x.yaw();
-    xb_absolute_pose_msg2D.motion_heading = x.yaw();
+    xb_absolute_pose_msg_2d.orientation_accuracy = 0.01;
+    xb_absolute_pose_msg_2d.pose.pose.position.x = odometry_2d.pose.pose.position.x;
+    xb_absolute_pose_msg_2d.pose.pose.position.y = odometry_2d.pose.pose.position.y;
+    xb_absolute_pose_msg_2d.pose.pose.position.z = 0;
+    xb_absolute_pose_msg_2d.pose.pose.orientation = tf2::toMsg(q_2d);
+    xb_absolute_pose_msg_2d.vehicle_heading = x.yaw();
+    xb_absolute_pose_msg_2d.motion_heading = x.yaw();
 
-    xbot_absolute_pose_pub.publish(xb_absolute_pose_msg2D);
+    xbot_absolute_pose_pub.publish(xb_absolute_pose_msg_2d);
 
     last_imu = *msg;
 }
@@ -473,7 +515,8 @@ int main(int argc, char **argv) {
         ROS_WARN_STREAM("[xbot_positioning] Using gyro z offset of: " << gyro_bias.z());
     }
 
-    odometry_pub = paramNh.advertise<nav_msgs::Odometry>("odom_out", 50);
+    odometry_3d_pub = paramNh.advertise<nav_msgs::Odometry>("odom_3d_out", 50);
+    odometry_2d_pub = paramNh.advertise<nav_msgs::Odometry>("odom_2d_out", 50);
     xbot_absolute_pose_pub = paramNh.advertise<xbot_msgs::AbsolutePose>("xb_pose_out", 50);
     if (publish_debug) {
         dbg_expected_motion_vector = paramNh.advertise<geometry_msgs::Vector3>("debug_expected_motion_vector", 50);
