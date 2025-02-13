@@ -200,7 +200,11 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
     //get result quaternions
-    ROS_INFO_STREAM("[xbot_positioning] RPY "<<x.roll()<<" "<<x.pitch()<<" "<<x.yaw()<<" Input RP "<<roll_angle<<" "<<pitch_angle<<" GYRO XYZ "<<imu_gyro.x()<<" "<<imu_gyro.y()<<" "<<imu_gyro.z());
+    ROS_INFO("[xbot_positioning] RPY %.2f %.2f %.2f Input RP %.2f %.2f GYRO XYZ %.2f %.2f %.2f ACCEL XYZ %.2f %.2f %.2f",
+        x.roll(),x.pitch(),x.yaw(),
+        roll_angle,pitch_angle,
+        imu_gyro.x(),imu_gyro.y(),imu_gyro.z(),
+        imu_accel.x(),imu_accel.y(),imu_accel.z());
     tf2::Quaternion q_3d;
     q_3d.setRPY(x.roll(), x.pitch(), x.yaw());
     tf2::Quaternion q_2d;
