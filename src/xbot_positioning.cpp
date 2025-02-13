@@ -203,15 +203,15 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     ROS_INFO_STREAM("[xbot_positioning] RPY "<<x.roll()<<" "<<x.pitch()<<" "<<x.yaw()<<" Input RP "<<roll_angle<<" "<<pitch_angle<<" GYRO XYZ "<<imu_gyro.x()<<" "<<imu_gyro.y()<<" "<<imu_gyro.z());
     tf2::Quaternion q_3d(x.roll(), x.pitch(), x.yaw());
     tf2::Quaternion q_2d(0, 0, x.yaw());
-
+    tf2::Quaternion q_2d_to_3d(x.roll(), x.pitch(),0);
     //Two quaternions from the same frame, q_2d and q_3d. 
     //to find the relative rotation, q_r, to go from q_2d to q_3d:
     //q_3d = q_r*q_2d
     //solve for q_r similarly to solving a matrix equation. 
     //Invert q_1 and right-multiply both sides. Again, the order of multiplication is important:
     //q_r = q_3d*q_2d_inverse
-
-    tf2::Quaternion q_2d_to_3d = q_3d*q_2d.inverse();
+    //DOESN'T WORK!!!
+    //tf2::Quaternion q_2d_to_3d = q_3d*q_2d.inverse();
 
     // This represents an estimate of a position and velocity in free space.  
     // The pose in this message should be specified in the coordinate frame given by header.frame_id.
