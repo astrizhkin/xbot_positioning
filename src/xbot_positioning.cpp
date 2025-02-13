@@ -242,7 +242,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     // The pose in this message should be specified in the coordinate frame given by header.frame_id.
     // The twist in this message should be specified in the coordinate frame given by the child_frame_id
     nav_msgs::Odometry odometry_3d;
-    odometry_3d.header.stamp = ros::Time::now();
+    odometry_3d.header.stamp = odometry_2d.header.stamp;
     odometry_3d.header.seq++;
     odometry_3d.header.frame_id = "map";
     odometry_3d.child_frame_id = "base_link";
@@ -256,6 +256,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     // This expresses a transform from coordinate frame header.frame_id
     // to the coordinate frame child_frame_id
     geometry_msgs::TransformStamped base_link_transform_3d;
+    base_link_transform_3d.header.stamp = odometry_3d.header.stamp;
     base_link_transform_3d.header.frame_id = "base_footprint";
     base_link_transform_3d.child_frame_id = "base_link";
     base_link_transform_3d.transform.translation.x = 0;
