@@ -88,12 +88,12 @@ public:
 
         // Calculate the GPS antenna position given the current system state.
         tf2::Vector3 antenna(antenna_offset_x, antenna_offset_y, antenna_offset_z);
-        antenna = antenna.rotate(tf2::Vector3(0,0,1),x.yaw());
-        antenna = antenna.rotate(tf2::Vector3(0,1,0),x.pitch());
-        antenna = antenna.rotate(tf2::Vector3(1,0,0),x.roll());
-        measurement.x_pos() = x.x_pos() + antenna.x();
-        measurement.y_pos() = x.y_pos() + antenna.y();
-        measurement.z_pos() = x.z_pos() + antenna.z();
+        tf2::Quaternion q;
+        q.setRPY(x.roll(),x.pitch(),x.yaw());
+        tf2::Vector3 antennaRotated = tf2::quatRotate(q,antenna);
+        measurement.x_pos() = x.x_pos() + antennaRotated.x();
+        measurement.y_pos() = x.y_pos() + antennaRotated.y();
+        measurement.z_pos() = x.z_pos() + antennaRotated.z();
 
         //old implementation
         //TODO: implement 3d shift using all 3 offsets

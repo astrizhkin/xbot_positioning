@@ -146,6 +146,11 @@ namespace xbot {
                 auto newPitch = x.pitch() + u.dpitch() * dt;
                 auto newYaw = x.yaw() + u.dyaw() * dt;
 
+                double cosy = std::cos(newYaw);
+                double siny = std::sin(newYaw);
+                double cosp = std::cos(newPitch);
+                double sinp = std::sin(newPitch);
+
                 // Re-scale orientation to [-pi/2 to +pi/2]
 
                 x_.roll() = newRoll;
@@ -155,9 +160,9 @@ namespace xbot {
                 // New x-position given by old x-position plus change in x-direction
                 // Change in x-direction is given by the cosine of the (new) orientation
                 // times the velocity
-                x_.x() = x.x() + std::cos(newYaw) * std::cos(newPitch) * u.v() * dt;
-                x_.y() = x.y() + std::sin(newYaw) * std::cos(newPitch) * u.v() * dt;
-                x_.z() = x.z() + std::sin(newPitch) * u.v() * dt;
+                x_.x() = x.x() + cosy * cosp * u.v() * dt;
+                x_.y() = x.y() + siny * cosp * u.v() * dt;
+                x_.z() = x.z() - sinp * u.v() * dt;
 
                 x_.sl() = x.sl();
                 x_.sa() = x.sa();
@@ -194,21 +199,26 @@ namespace xbot {
                 auto newPitch = x.pitch() + u.dpitch() * dt;
                 auto newYaw = x.yaw() + u.dyaw() * dt;
 
+                double cosy = std::cos(newYaw);
+                double siny = std::sin(newYaw);
+                double cosp = std::cos(newPitch);
+                double sinp = std::sin(newPitch);
+
                 //d sinx / dx = cosx
                 //d cosx / dx = -sinx
                 this->F(S::X, S::X) = 1;
-                // partial differential of (x.x() + std::cos(newYaw) * std::cos(newPitch) * u.v() * dt)
-                this->F(S::X, S::YAW) =   -std::sin(newYaw) * std::cos(newPitch) * u.v() * dt;
-                this->F(S::X, S::PITCH) = -std::cos(newYaw) * std::sin(newPitch) * u.v() * dt;
+                // partial differential of (x.x() + cosy * cosp * u.v() * dt)
+                this->F(S::X, S::YAW) =   -siny * cosp * u.v() * dt;
+                this->F(S::X, S::PITCH) = -cosy * sinp * u.v() * dt;
 
                 this->F(S::Y, S::Y) = 1;
-                // partial differential of (x.y() + std::sin(newYaw) * std::cos(newPitch) * u.v() * dt)
-                this->F(S::Y, S::YAW) =    std::cos(newYaw) * std::cos(newPitch) * u.v() * dt;
-                this->F(S::Y, S::PITCH) = -std::sin(newYaw) * std::sin(newPitch) * u.v() * dt;
+                // partial differential of (x.y() + siny * cosp * u.v() * dt)
+                this->F(S::Y, S::YAW) =    cosy * cosp * u.v() * dt;
+                this->F(S::Y, S::PITCH) = -siny * sinp * u.v() * dt;
 
                 this->F(S::Z, S::Z) = 1;
-                // partial differential of (x.z() + std::sin(newPitch) * u.v() * dt)
-                this->F(S::Z, S::PITCH) =  std::cos(newPitch) * u.v() * dt;
+                // partial differential of (x.z() - sinp * u.v() * dt)
+                this->F(S::Z, S::PITCH) =  - cosp * u.v() * dt;
 
                 this->F(S::ROLL, S::ROLL) = 1;
                 this->F(S::PITCH, S::PITCH) = 1;

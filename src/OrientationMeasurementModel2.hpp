@@ -78,20 +78,37 @@ public:
         M measurement;
         
         // Measurement is given by the actual robot orientation
-        measurement.vx() = x.sl() * std::cos(x.yaw()) - (std::sin(x.yaw()) * antenna_offset_x * x.sa()) - (std::cos(x.yaw()) * antenna_offset_y * x.sa());
-        measurement.vy() = x.sl() * std::sin(x.yaw()) + (std::cos(x.yaw()) * antenna_offset_x * x.sa()) - (std::sin(x.yaw()) * antenna_offset_y * x.sa());
+        double cosy = std::cos(x.yaw());
+        double siny = std::sin(x.yaw());
+        //double cosp = std::cos(x.pitch());
+        double sinp = std::sin(x.pitch());
 
+        //it should use all antenna offsets
+        measurement.vx() = x.sl() * cosy * cosp - siny * antenna_offset_x * x.sa() - cosy * antenna_offset_y * x.sa();
+        measurement.vy() = x.sl() * siny * cosp + cosy * antenna_offset_x * x.sa() - siny * antenna_offset_y * x.sa();
+        measurement.vz() = - x.sl() * sinp;
         return measurement;
     }
 
-        void updateJacobians( const S& x )
-        {
-            this->H.setZero();
-            // partial derivative of meas.vx() w.r.t. x.yaw()
+    void updateJacobians( const S& x )
+    {
+        this->H.setZero();
 
-            this->H( M::VX, S::YAW ) = -x.sl() * std::sin(x.yaw()) - antenna_offset_x * x.sa() * std::cos(x.yaw()) + std::sin(x.yaw()) * antenna_offset_y *x.sa();
-            this->H( M::VY, S::YAW ) = x.sl() * std::cos(x.yaw())  - antenna_offset_x * x.sa() * std::sin(x.yaw()) - std::cos(x.yaw()) * antenna_offset_y * x.sa();
-        }
+        // partial derivative of meas A w.r.t. B
+        double cosy = std::cos(x.yaw());
+        double siny = std::sin(x.yaw());
+        double cosp = std::cos(x.pitch());
+        double sinp = std::sin(x.pitch());
+
+        //it should use all antenna offsets
+        this->H( M::VX, S::YAW ) = -x.sl() * siny * cosp - antenna_offset_x * x.sa() * cosy + siny * antenna_offset_y *x.sa();
+        this->H( M::VY, S::YAW ) = x.sl() * cosy * cosp - antenna_offset_x * x.sa() * siny - cosy * antenna_offset_y * x.sa();
+        //this->H( M::VZ, S::YAW ) = 1;
+
+        //this->H( M::VX, S::PITCH ) = 
+        //this->H( M::VY, S::PITCH ) = 
+        this->H( M::VZ, S::PITCH ) = - x.sl() * sinp
+    }
 
 
     double antenna_offset_x = 0;
