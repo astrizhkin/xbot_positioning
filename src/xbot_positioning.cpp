@@ -528,7 +528,7 @@ int main(int argc, char **argv) {
         skip_accelermoter_calibration = true;
     }
     tf2::Vector3 antenna_offset;
-    if(!findStaticTransform("gps", "base_link", antenna_offset, n)){
+    if(!findStaticTransform("base_link", "gps", antenna_offset, n)){
         return 1;
     }
     //paramNh.param("accel_bias_y", accel_bias., 0.0);
