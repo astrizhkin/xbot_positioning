@@ -107,7 +107,7 @@ public:
 
         //this->H( M::VX, S::PITCH ) = 
         //this->H( M::VY, S::PITCH ) = 
-        this->H( M::VZ, S::PITCH ) = - x.sl() * sinp
+        this->H( M::VZ, S::PITCH ) = - x.sl() * sinp;
     }
 
 
