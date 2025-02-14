@@ -471,14 +471,14 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
 
 bool findStaticTransform(const std::string& targetFrame, const std::string& sourceFrame, tf2::Vector3 &vec,const ros::NodeHandle &nh) {
     tf2_ros::Buffer tfBuffer;
-    tf2_ros::TransformListener tfListener(tfBuffer,nh,false);
+    tf2_ros::TransformListener tfListener(tfBuffer,nh,true);
     try{
         geometry_msgs::TransformStamped transform = tfBuffer.lookupTransform(targetFrame, sourceFrame,ros::Time::now(),ros::Duration(20));
         tf2::fromMsg(transform.transform.translation,vec);
         ROS_INFO_STREAM("[xbot_positioning] Found transform from "<<sourceFrame<<" to "<<targetFrame);
         return true;
     } catch (tf2::TransformException &ex) {
-        ROS_ERROR_STREAM("[xbot_positioning] Unable to get transfrom from "<<sourceFrame<<" to "<<targetFrame<<": %s"<<ex.what());
+        ROS_ERROR_STREAM("[xbot_positioning] Unable to get transfrom from "<<sourceFrame<<" to "<<targetFrame<<": "<<ex.what());
         return false;
     }
 }
