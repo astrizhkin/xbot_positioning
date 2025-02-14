@@ -185,14 +185,13 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
     tf2::Vector3 pitch_cross = pitch_vector.cross(normal_gravity_vector);
     double pitch_angle = pitch_vector.angle(normal_gravity_vector);
-    //if (pitch_cross.y() > 0) pitch_angle = -pitch_angle;
+    if (pitch_cross.y() < 0) pitch_angle = -pitch_angle;
     
     //roll angle around x axis based on accellerometer
     tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
     tf2::Vector3 roll_cross = roll_vector.cross(normal_gravity_vector);
     double roll_angle = roll_vector.angle(normal_gravity_vector);
-    //it works but why we check here for the positive to reverse? 
-    //if (roll_cross.x() > 0) roll_angle = -roll_angle;
+    if (roll_cross.x() < 0) roll_angle = -roll_angle;
     
     //update EKF state
     core.predict(linearVelocityWheels, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
@@ -200,7 +199,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
     //get result quaternions
-    ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(y%+3.2f) %+3.2f(x%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
+    ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(x%+3.2f) %+3.2f(y%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
         x.roll(),x.pitch(),x.yaw(),
         roll_angle,roll_cross.x(),pitch_angle,pitch_cross.y(),
         imu_gyro.x(),imu_gyro.y(),imu_gyro.z(),
