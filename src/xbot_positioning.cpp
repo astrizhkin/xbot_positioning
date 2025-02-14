@@ -198,12 +198,14 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
+
+    //ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(x%+3.2f) %+3.2f(y%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
+    //    x.roll(),x.pitch(),x.yaw(),
+    //    roll_angle,roll_cross.x(),pitch_angle,pitch_cross.y(),
+    //    imu_gyro.x(),imu_gyro.y(),imu_gyro.z(),
+    //    imu_accel.x(),imu_accel.y(),imu_accel.z());
+
     //get result quaternions
-    ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(x%+3.2f) %+3.2f(y%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
-        x.roll(),x.pitch(),x.yaw(),
-        roll_angle,roll_cross.x(),pitch_angle,pitch_cross.y(),
-        imu_gyro.x(),imu_gyro.y(),imu_gyro.z(),
-        imu_accel.x(),imu_accel.y(),imu_accel.z());
     tf2::Quaternion q_3d;
     q_3d.setRPY(x.yaw(),x.pitch(),x.roll());//same as setEylerZYZ
     tf2::Quaternion q_2d;
