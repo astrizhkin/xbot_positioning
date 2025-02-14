@@ -207,7 +207,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
 
     //get result quaternions
     tf2::Quaternion q_3d;
-    q_3d.setRPY(x.yaw(),x.pitch(),x.roll());//same as setEylerZYZ
+    q_3d.setRPY(x.roll(),x.pitch(),x.yaw());//same as setEylerZYZ
     tf2::Quaternion q_2d;
     q_2d.setRPY(0, 0, x.yaw());//same as setEylerZYZ
     tf2::Quaternion q_2d_to_3d;
