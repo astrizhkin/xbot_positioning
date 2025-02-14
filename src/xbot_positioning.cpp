@@ -181,18 +181,18 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
 
     //compute pitch and roll (it includes acceleration component unfortunately)
     
-    //pitch angle around y axis
+    //pitch angle around y axis based on accellerometer
     tf2::Vector3 pitch_vector(imu_accel.x(),0.0,imu_accel.z());
     tf2::Vector3 pitch_cross = normal_gravity_vector.cross(pitch_vector);
-    double pitch_angle = normal_gravity_vector.angle(pitch_vector);
+    double pitch_angle = pitch_vector.angle(normal_gravity_vector);
     if (pitch_cross.y() < 0) pitch_angle = -pitch_angle;
     
-    //roll angle around x axis 
+    //roll angle around x axis based on accellerometer
     tf2::Vector3 roll_vector(0.0,imu_accel.y(),imu_accel.z());
     tf2::Vector3 roll_cross = normal_gravity_vector.cross(roll_vector);
-    double roll_angle = normal_gravity_vector.angle(roll_vector);
+    double roll_angle = roll_vector.angle(normal_gravity_vector);
     //it works but why we check here for the positive to reverse? 
-    if (roll_cross.x() > 0) roll_angle = -roll_angle;
+    if (roll_cross.x() < 0) roll_angle = -roll_angle;
     
     //update EKF state
     core.predict(linearVelocityWheels, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
@@ -200,17 +200,17 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
     auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
     //get result quaternions
-    ROS_INFO("[xbot_positioning] RPY %.2f %.2f %.2f Input RP %.2f %.2f GYRO XYZ %.2f %.2f %.2f ACCEL XYZ %.2f %.2f %.2f",
+    ROS_INFO("[xbot_positioning] RPY %4.2f %4.2f %4.2f Input RP %4.2f %4.2f GYRO XYZ %4.2f %4.2f %4.2f ACCEL XYZ %4.2f %4.2f %4.2f",
         x.roll(),x.pitch(),x.yaw(),
         roll_angle,pitch_angle,
         imu_gyro.x(),imu_gyro.y(),imu_gyro.z(),
         imu_accel.x(),imu_accel.y(),imu_accel.z());
     tf2::Quaternion q_3d;
-    q_3d.setRPY(x.roll(), x.pitch(), x.yaw());
+    q_3d.setRPY(x.yaw(),x.pitch(),x.roll());//same as setEylerZYZ
     tf2::Quaternion q_2d;
-    q_2d.setRPY(0, 0, x.yaw());
+    q_2d.setRPY(0, 0, x.yaw());//same as setEylerZYZ
     tf2::Quaternion q_2d_to_3d;
-    q_2d_to_3d.setRPY(x.roll(), x.pitch(),0);
+    q_2d_to_3d.setRPY(x.roll(), x.pitch(),0);//same as setEylerZYZ
     //Two quaternions from the same frame, q_2d and q_3d. 
     //to find the relative rotation, q_r, to go from q_2d to q_3d:
     //q_3d = q_r*q_2d
