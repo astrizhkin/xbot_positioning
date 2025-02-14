@@ -106,9 +106,7 @@ void xbot::positioning::xbot_positioning_core::setState(double px, double py, do
     this->ekf.setCovariance(c);
 }
 
-void xbot::positioning::xbot_positioning_core::setAntennaOffset(double offset_x, double offset_y,double offset_z) {
-    p_model.antenna_offset_x = o2_model.antenna_offset_x = offset_x;
-    p_model.antenna_offset_y = o2_model.antenna_offset_y = offset_y;
-    p_model.antenna_offset_z = o2_model.antenna_offset_z = offset_z;
+void xbot::positioning::xbot_positioning_core::setAntennaOffset(tf2::Vector3 anttena_offset) {
+    p_model.antenna_offset = o2_model.antenna_offset = anttena_offset;
 }
 

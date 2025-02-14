@@ -68,7 +68,7 @@ double max_gps_accuracy;
 bool publish_debug;
 
 // Antenna offset (offset between point of rotation and antenna)
-double antenna_offset_x, antenna_offset_y, antenna_offset_z;
+//double antenna_offset_x, antenna_offset_y, antenna_offset_z;
 
 xbot_positioning::KalmanState state_msg;
 
@@ -448,7 +448,7 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
                 dbg.z = m.vz();
                 dbg_expected_motion_vector.publish(dbg);
             }
-            if (std::sqrt(std::pow(msg->motion_vector.x, 2) + std::pow(msg->motion_vector.y, 2)) >= min_speed) {
+            if (std::sqrt(std::pow(msg->motion_vector.x, 2) + std::pow(msg->motion_vector.y, 2) + std::pow(msg->motion_vector.z, 2)) >= min_speed) {
                 core.updateOrientation2(msg->motion_vector.x, msg->motion_vector.y, msg->motion_vector.z, 10000.0);
             }
         }
@@ -469,6 +469,20 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
     }
 }
 
+bool findStaticTransform(const std::string& targetFrame, const std::string& sourceFrame, tf2::Vector3 &vec,const ros::NodeHandle &nh) {
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer,nh,false);
+    try{
+        geometry_msgs::TransformStamped transform = tfBuffer.lookupTransform(targetFrame, sourceFrame,ros::Time::now(),ros::Duration(20));
+        tf2::fromMsg(transform.transform.translation,vec);
+        ROS_INFO_STREAM("[xbot_positioning] Found transform from "<<sourceFrame<<" to "<<targetFrame);
+        return true;
+    } catch (tf2::TransformException &ex) {
+        ROS_ERROR_STREAM("[xbot_positioning] Unable to get transfrom from "<<sourceFrame<<" to "<<targetFrame<<": %s"<<ex.what());
+        return false;
+    }
+}
+
 int main(int argc, char **argv) {
     ros::init(argc, argv, "xbot_positioning");
 
@@ -486,7 +500,7 @@ int main(int argc, char **argv) {
     valid_gps_samples = 0;
     gps_outlier_count = 0;
 
-    antenna_offset_x = antenna_offset_y = antenna_offset_z = 0;
+    //antenna_offset_x = antenna_offset_y = antenna_offset_z = 0;
 
     ros::NodeHandle n;
     ros::NodeHandle paramNh("~");
@@ -500,9 +514,9 @@ int main(int argc, char **argv) {
     paramNh.param("min_speed", min_speed, 0.01);
     paramNh.param("max_gps_accuracy", max_gps_accuracy, 0.1);
     paramNh.param("debug", publish_debug, false);
-    paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
-    paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
-    paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
+    //paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
+    //paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
+    //paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
 
     double accel_bias_x = 0.0, accel_bias_y = 0.0, accel_bias_z = 0.0;
     paramNh.param("accel_bias_x", accel_bias_x, 0.0);
@@ -513,12 +527,16 @@ int main(int argc, char **argv) {
         accel_bias.setValue(accel_bias_x,accel_bias_y,accel_bias_z);
         skip_accelermoter_calibration = true;
     }
+    tf2::Vector3 antenna_offset;
+    if(!findStaticTransform("gps", "base_link", antenna_offset, n)){
+        return 1;
+    }
     //paramNh.param("accel_bias_y", accel_bias., 0.0);
     //paramNh.param("accel_bias_z", accel_bias., 0.0);
+    
+    core.setAntennaOffset(antenna_offset);
 
-    core.setAntennaOffset(antenna_offset_x, antenna_offset_y, antenna_offset_z);
-
-    ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset_x << ", " << antenna_offset_y << ", " << antenna_offset_z);
+    ROS_INFO_STREAM("[xbot_positioning] Antenna offset: " << antenna_offset.x() << ", " << antenna_offset.y() << ", " << antenna_offset.z());
 
     if (gyro_bias_z != 0.0 && skip_gyro_calibration) {
         gyro_bias.setZ(gyro_bias_z);

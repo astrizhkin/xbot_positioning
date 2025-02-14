@@ -87,10 +87,9 @@ public:
         M measurement;
 
         // Calculate the GPS antenna position given the current system state.
-        tf2::Vector3 antenna(antenna_offset_x, antenna_offset_y, antenna_offset_z);
         tf2::Quaternion q;
         q.setRPY(x.roll(),x.pitch(),x.yaw());
-        tf2::Vector3 antennaRotated = tf2::quatRotate(q,antenna);
+        tf2::Vector3 antennaRotated = tf2::quatRotate(q, antenna_offset);
         measurement.x_pos() = x.x_pos() + antennaRotated.x();
         measurement.y_pos() = x.y_pos() + antennaRotated.y();
         measurement.z_pos() = x.z_pos() + antennaRotated.z();
@@ -105,9 +104,7 @@ public:
         return measurement;
     }
 
-    double antenna_offset_x = 0;
-    double antenna_offset_y = 0;
-    double antenna_offset_z = 0;
+    tf2::Vector3 antenna_offset;
 
 protected:
 

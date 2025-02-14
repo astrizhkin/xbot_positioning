@@ -75,17 +75,17 @@ public:
      */
     M h(const S& x) const
     {
+        // Measurement is given by the actual robot orientation
         M measurement;
         
-        // Measurement is given by the actual robot orientation
         double cosy = std::cos(x.yaw());
         double siny = std::sin(x.yaw());
-        //double cosp = std::cos(x.pitch());
+        double cosp = std::cos(x.pitch());
         double sinp = std::sin(x.pitch());
 
         //it should use all antenna offsets
-        measurement.vx() = x.sl() * cosy * cosp - siny * antenna_offset_x * x.sa() - cosy * antenna_offset_y * x.sa();
-        measurement.vy() = x.sl() * siny * cosp + cosy * antenna_offset_x * x.sa() - siny * antenna_offset_y * x.sa();
+        measurement.vx() = x.sl() * cosy * cosp - siny * antenna_offset.x() * x.sa() - cosy * antenna_offset.y() * x.sa();
+        measurement.vy() = x.sl() * siny * cosp + cosy * antenna_offset.x() * x.sa() - siny * antenna_offset.y() * x.sa();
         measurement.vz() = - x.sl() * sinp;
         return measurement;
     }
@@ -101,8 +101,8 @@ public:
         double sinp = std::sin(x.pitch());
 
         //it should use all antenna offsets
-        this->H( M::VX, S::YAW ) = -x.sl() * siny * cosp - antenna_offset_x * x.sa() * cosy + siny * antenna_offset_y *x.sa();
-        this->H( M::VY, S::YAW ) = x.sl() * cosy * cosp - antenna_offset_x * x.sa() * siny - cosy * antenna_offset_y * x.sa();
+        this->H( M::VX, S::YAW ) = -x.sl() * siny * cosp - antenna_offset.x() * x.sa() * cosy + siny * antenna_offset.y() * x.sa();
+        this->H( M::VY, S::YAW ) = x.sl() * cosy * cosp - antenna_offset.x() * x.sa() * siny - cosy * antenna_offset.y() * x.sa();
         //this->H( M::VZ, S::YAW ) = 1;
 
         //this->H( M::VX, S::PITCH ) = 
@@ -111,9 +111,7 @@ public:
     }
 
 
-    double antenna_offset_x = 0;
-    double antenna_offset_y = 0;
-    double antenna_offset_z = 0;
+    tf2::Vector3 antenna_offset;
 };
 
 } // namespace Robot
