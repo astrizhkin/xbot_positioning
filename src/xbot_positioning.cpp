@@ -55,8 +55,8 @@ ros::Time gyro_calibration_start;
 //double accel_offset_z;
 
 // Current speed calculated by wheel ticks
-double linearVelocityWheels = 0.0;
-//double angularVelocityWheels = 0.0;
+double odom_linear_velocity = 0.0;
+double odom_angular_velocity = 0.0;
 
 // Min speed for motion vector to be fed into kalman filter
 double min_speed = 0.0;
@@ -194,10 +194,10 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     if (roll_cross.x() < 0) roll_angle = -roll_angle;
     
     //update EKF state
-    core.predict(linearVelocityWheels, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
+    core.predict(odom_linear_velocity, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
     //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
-    auto x = core.updateSpeed(linearVelocityWheels, imu_gyro.z(),0.01);
+    auto x = core.updateSpeed(odom_linear_velocity, imu_gyro.z(),0.01);
 
     //ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(x%+3.2f) %+3.2f(y%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
     //    x.roll(),x.pitch(),x.yaw(),
@@ -233,8 +233,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     odometry_2d.pose.pose.position.y = x.y_pos();
     odometry_2d.pose.pose.position.z = 0;
     odometry_2d.pose.pose.orientation = tf2::toMsg(q_2d);
-    odometry_2d.twist.twist.linear.x = linearVelocityWheels * cos(x.pitch());//projected to 2d linearVelocityWheels
-    //odometry_2d.twist.twist.angular.z = angularVelocityWheels;//correct. angularVelocityWheels 3d = 2d
+    odometry_2d.twist.twist.linear.x = odom_linear_velocity * cos(x.pitch());//projected to 2d linearVelocityWheels
+    odometry_2d.twist.twist.angular.z = odom_angular_velocity;//correct. angularVelocityWheels 3d = 2d
     //build messages
 
     // This expresses a transform from coordinate frame header.frame_id
@@ -259,8 +259,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     odometry_3d.pose.pose.position.y = x.y_pos();
     odometry_3d.pose.pose.position.z = x.z_pos();
     odometry_3d.pose.pose.orientation = tf2::toMsg(q_3d);
-    odometry_3d.twist.twist.linear.x = linearVelocityWheels;
-    //odometry_3d.twist.twist.angular.z = angularVelocityWheels;
+    odometry_3d.twist.twist.linear.x = odom_linear_velocity;
+    odometry_3d.twist.twist.angular.z = odom_angular_velocity;
 
     // This expresses a transform from coordinate frame header.frame_id
     // to the coordinate frame child_frame_id
@@ -353,8 +353,11 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     //    d_wheel_r *= -1.0;
     //}
 
-    double d_center = (d_wheel_l + d_wheel_r) / 2.0;
-    linearVelocityWheels = d_center / dt;
+    double d_linear = (d_wheel_r + d_wheel_l) / 2.0;
+    double d_angular = (d_wheel_r - d_wheel_l) / msg->wheel_separation;
+    
+    odom_linear_velocity = d_linear / dt;
+    odom_angular_velocity = d_angular / dt;
     //here we can calculate angular velocity from wheels
 
     //ROS_INFO("vx %f dist %f",vx,d_center);
@@ -363,7 +366,8 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
 }
 
 void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
-    linearVelocityWheels = msg->twist.linear.x;
+    odom_linear_velocity = msg->twist.linear.x;
+    odom_angular_velocity = msg->twist.angular.z;
 }
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
@@ -488,8 +492,8 @@ int main(int argc, char **argv) {
 
     has_gps = false;
     gps_enabled = true;
-    linearVelocityWheels = 0.0;
-    //angularVelocityWheels = 0.0;
+    odom_linear_velocity = 0.0;
+    odom_angular_velocity = 0.0;
     has_gyro = false;
     has_ticks = false;
     gyro_bias.setValue(0.0,0.0,0.0);
