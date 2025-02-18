@@ -3,6 +3,8 @@
 // Copyright (c) 2022 Clemens Elflein. All rights reserved.
 //
 
+//#define WHEEL_TICKS_MSG
+
 #include <geometry_msgs/TwistStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
@@ -13,10 +15,13 @@
 
 #include "SystemModel.hpp"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TwistWithCovarianceStamped.h"
 #include "ros/ros.h"
 #include "xbot_msgs/AbsolutePose.h"
-#include "xbot_msgs/WheelTick.h"
+#ifdef WHEEL_TICKS_MSG
+    #include "xbot_msgs/wheel_WheelTick.h"
+#endif
 #include "xbot_positioning/GPSControlSrv.h"
 #include "xbot_positioning/KalmanState.h"
 #include "xbot_positioning/SetPoseSrv.h"
@@ -37,8 +42,10 @@ xbot::positioning::xbot_positioning_core core{};
 bool skip_gyro_calibration;
 
 // True, if we have wheel ticks (i.e. last_ticks is valid)
-bool has_ticks;
-xbot_msgs::WheelTick last_ticks;
+#ifdef WHEEL_TICKS_MSG
+    bool has_ticks;
+    xbot_msgs::WheelTick last_ticks;
+#endif
 bool has_gps;
 xbot_msgs::AbsolutePose last_gps;
 
@@ -46,13 +53,6 @@ xbot_msgs::AbsolutePose last_gps;
 bool has_gyro;
 sensor_msgs::Imu last_imu;
 ros::Time gyro_calibration_start;
-//double gyro_offset_x;
-//double gyro_offset_y;
-//double gyro_offset_z;
-
-//double accel_offset_x;
-//double accel_offset_y;
-//double accel_offset_z;
 
 // Current speed calculated by wheel ticks
 double odom_linear_velocity = 0.0;
@@ -65,7 +65,7 @@ double min_speed = 0.0;
 double max_gps_accuracy;
 
 // True, if we should publish debug topics (expected motion vector and kalman state)
-bool publish_debug;
+bool publish_debug, publish_2d_odom;
 
 // Antenna offset (offset between point of rotation and antenna)
 //double antenna_offset_x, antenna_offset_y, antenna_offset_z;
@@ -292,7 +292,9 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     }
 
     odometry_3d_pub.publish(odometry_3d);
-    odometry_2d_pub.publish(odometry_2d);
+    if(publish_2d_odom) {
+        odometry_2d_pub.publish(odometry_2d);
+    }
 
     xbot_msgs::AbsolutePose xb_absolute_pose_msg_2d;
     xb_absolute_pose_msg_2d.header = odometry_2d.header;
@@ -330,6 +332,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     last_imu = *msg;
 }
 
+#ifdef WHEEL_TICKS_MSG
 void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     if (!has_ticks) {
         last_ticks = *msg;
@@ -346,24 +349,17 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
     double d_wheel_l = (rl_delta + fl_delta) * msg->wheel_radius / 2;
     double d_wheel_r = (rr_delta + fr_delta) * msg->wheel_radius / 2;
 
-    //if (msg->wheel_direction_rl) {
-    //    d_wheel_l *= -1.0;
-    //}
-    //if (msg->wheel_direction_rr) {
-    //    d_wheel_r *= -1.0;
-    //}
-
     double d_linear = (d_wheel_r + d_wheel_l) / 2.0;
     double d_angular = (d_wheel_r - d_wheel_l) / msg->wheel_separation;
     
     odom_linear_velocity = d_linear / dt;
     odom_angular_velocity = d_angular / dt;
-    //here we can calculate angular velocity from wheels
 
     //ROS_INFO("vx %f dist %f",vx,d_center);
 
     last_ticks = *msg;
 }
+#endif
 
 void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
     odom_linear_velocity = msg->twist.linear.x;
@@ -376,20 +372,29 @@ bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::
     return true;
 }
 
-bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPoseSrvResponse &res) {
-    ROS_INFO_STREAM("[xbot_positioning] set pose with reason [" << req.reason << "]");
+bool setPose(const geometry_msgs::Pose &pose) {
     tf2::Quaternion q;
-    tf2::fromMsg(req.robot_pose.orientation, q);
+    tf2::fromMsg(pose.orientation, q);
 
     tf2::Matrix3x3 m(q);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
 
-    core.setState(req.robot_pose.position.x, req.robot_pose.position.y, req.robot_pose.position.z, 0, 0, yaw, 0, 0);
+    core.setState(pose.position.x, pose.position.y, pose.position.z, 0, 0, yaw, 0, 0);
     return true;
 }
 
-void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
+bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPoseSrvResponse &res) {
+    ROS_INFO_STREAM("[xbot_positioning] set pose with reason [" << req.reason << "]");
+    setPose(req.robot_pose);
+}
+
+void onInitialPose(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+    ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] set initial pose from topic");
+    setPose(msg->pose);
+}
+
+void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
     if (!gps_enabled) {
         ROS_INFO_STREAM_THROTTLE(1, "[xbot_positioning] dropping GPS update, since gps_enabled = false.");
         return;
@@ -495,7 +500,9 @@ int main(int argc, char **argv) {
     odom_linear_velocity = 0.0;
     odom_angular_velocity = 0.0;
     has_gyro = false;
-    has_ticks = false;
+    #ifdef WHEEL_TICKS_MSG
+        has_ticks = false;
+    #endif
     gyro_bias.setValue(0.0,0.0,0.0);
     accel_bias.setValue(0.0,0.0,0.0);
 
@@ -518,6 +525,7 @@ int main(int argc, char **argv) {
     paramNh.param("min_speed", min_speed, 0.01);
     paramNh.param("max_gps_accuracy", max_gps_accuracy, 0.1);
     paramNh.param("debug", publish_debug, false);
+    paramNh.param("publish_2d_odom", publish_2d_odom, false);
     //paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
     //paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
     //paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
@@ -535,8 +543,6 @@ int main(int argc, char **argv) {
     if(!findStaticTransform("base_link", "gps", antenna_offset, n)){
         return 1;
     }
-    //paramNh.param("accel_bias_y", accel_bias., 0.0);
-    //paramNh.param("accel_bias_z", accel_bias., 0.0);
     
     core.setAntennaOffset(antenna_offset);
 
@@ -548,8 +554,13 @@ int main(int argc, char **argv) {
     }
 
     odometry_3d_pub = paramNh.advertise<nav_msgs::Odometry>("odom_3d_out", 50);
-    odometry_2d_pub = paramNh.advertise<nav_msgs::Odometry>("odom_2d_out", 50);
+
+    if(publish_2d_odom) {
+        odometry_2d_pub = paramNh.advertise<nav_msgs::Odometry>("odom_2d_out", 50);
+    }
+
     xbot_absolute_pose_pub = paramNh.advertise<xbot_msgs::AbsolutePose>("xb_pose_out", 50);
+
     if (publish_debug) {
         dbg_expected_motion_vector = paramNh.advertise<geometry_msgs::Vector3>("debug_expected_motion_vector", 50);
         kalman_state = paramNh.advertise<xbot_positioning::KalmanState>("kalman_state", 50);
@@ -557,8 +568,11 @@ int main(int argc, char **argv) {
 
     ros::Subscriber imu_sub = paramNh.subscribe("imu_in", 10, onImu);
     ros::Subscriber twist_sub = paramNh.subscribe("twist_in", 10, onTwistIn);
-    ros::Subscriber pose_sub = paramNh.subscribe("xb_pose_in", 10, onPose);
-    ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
+    ros::Subscriber gps_pose_sub = paramNh.subscribe("xb_pose_in", 10, onGpsPose);
+    ros::Subscriber initial_pose_sub = paramNh.subscribe("/initialpose", 10, onInitialPose);
+    #ifdef WHEEL_TICKS_MSG
+        ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
+    #endif
 
     ros::spin();
     return 0;
