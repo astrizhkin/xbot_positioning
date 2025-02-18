@@ -386,7 +386,7 @@ bool setPose(const geometry_msgs::Pose &pose) {
 
 bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPoseSrvResponse &res) {
     ROS_INFO_STREAM("[xbot_positioning] set pose with reason [" << req.reason << "]");
-    setPose(req.robot_pose);
+    return setPose(req.robot_pose);
 }
 
 void onInitialPose(const geometry_msgs::PoseStamped::ConstPtr &msg) {
