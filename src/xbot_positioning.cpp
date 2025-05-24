@@ -416,7 +416,7 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
     }
 
     if (msg->pose_valid || msg->motion_vector_valid || msg->position_accuracy_valid) {
-        ROS_INFO_STREAM("[xbot_positioning] Accept GPS update: " << msg->epoch_ms << ": P="<<msg->pose_valid << " M=" << msg->motion_vector_valid << " A="<<msg->position_accuracy_valid);
+        ROS_INFO_STREAM("[xbot_positioning] Accept GPS update: " << msg->epoch_ms << ": P="<<(int)msg->pose_valid << " M=" << (int)msg->motion_vector_valid << " A="<<(int)msg->position_accuracy_valid);
     } else {
         ROS_INFO_STREAM("[xbot_positioning] Dropped GPS update without valid data : " << msg->epoch_ms);
     }
@@ -454,7 +454,7 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
                 core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 0.001);
                 last_pose_update_epoch = msg->epoch_ms;
             } else {
-                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald position update: last epoch="<<last_pose_update_epoch<< " valid="<<msg->pose_valid);
+                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald position update: last epoch="<<last_pose_update_epoch<< " valid="<<(int)msg->pose_valid);
             }
             has_gps = true;
         } else if (has_gps) {
@@ -476,7 +476,7 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
                     gps_baselink_pub.publish(gps_baselink);
                 }
             } else {
-                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald position update: last epoch="<<last_pose_update_epoch<< " valid="<<msg->pose_valid);
+                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald position update: last epoch="<<last_pose_update_epoch<< " valid="<<(int)msg->pose_valid);
             }
 
 
@@ -507,7 +507,7 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
                     dbg_expected_motion_vector.publish(dbg);
                 }
             } else {
-                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald orientation update: last epoch="<<last_orientation_update_epoch<< " valid="<<msg->motion_vector_valid);
+                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch or invald orientation update: last epoch="<<last_orientation_update_epoch<< " valid="<<(int)msg->motion_vector_valid);
             }
         }
     } else {
