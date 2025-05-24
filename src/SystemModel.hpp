@@ -7,6 +7,10 @@
 #define SRC_SYSTEMMODEL_HPP
 
 #include <kalman/LinearizedSystemModel.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include "ros/ros.h"
+
 
 namespace xbot {
     namespace positioning {
@@ -142,32 +146,58 @@ namespace xbot {
                 S x_;
 
                 // New orientation given by old orientation plus orientation change
-                auto newRoll = x.roll() + u.droll() * dt;
-                auto newPitch = x.pitch() + u.dpitch() * dt;
-                auto newYaw = x.yaw() + u.dyaw() * dt;
+                //old simplified implementation
+                //auto newRoll = x.roll() + u.droll() * dt;
+                //auto newPitch = x.pitch() + u.dpitch() * dt;
+                //auto newYaw = x.yaw() + u.dyaw() * dt;
+
+                // Represent current orientation as quaternion (assuming we store or convert from Euler)
+                tf2::Quaternion q_current;
+                q_current.setRPY(x.roll(), x.pitch(), x.yaw()); // Convert Euler to quaternion
+
+                // Create a quaternion representing the angular change
+                tf2::Quaternion q_control;
+                q_control.setRPY(u.droll()*dt, u.dpitch()*dt, u.dyaw()*dt);
+
+                // Calculate new quaternion
+                tf2::Quaternion q_new = q_current * q_control;
+
+                tf2::Matrix3x3 wm(q_new);
+                double newRoll,newPitch,newYaw;
+                wm.getRPY(newRoll, newPitch, newYaw);
+
+                //ROS_INFO_STREAM("wfRPY:"<<x.roll()<<","<<x.pitch()<<","<<x.yaw()<< 
+                //                " rfvelRPY:"<<u.droll()<<","<<u.dpitch()<<","<<u.dyaw()<<
+                //                " wfdRPY:"<<world_dRoll<<","<<world_dPitch<<","<<world_dYaw);
+                
+                // Re-scale orientation to [-pi to +pi]
+                while(newYaw > M_PI){
+                    newYaw-= 2 * M_PI;
+                }
+                while(newYaw < -M_PI){
+                    newYaw+= 2 * M_PI; 
+                }
+                
+                x_.roll() = newRoll;
+                x_.pitch() = newPitch;
+                x_.yaw() = newYaw;
 
                 double cosy = std::cos(newYaw);
                 double siny = std::sin(newYaw);
                 double cosp = std::cos(newPitch);
                 double sinp = std::sin(newPitch);
 
-                // Re-scale orientation to [-pi/2 to +pi/2]
-
-                x_.roll() = newRoll;
-                x_.pitch() = newPitch;
-                x_.yaw() = newYaw;
-
                 // New x-position given by old x-position plus change in x-direction
                 // Change in x-direction is given by the cosine of the (new) orientation
                 // times the velocity
-                x_.x() = x.x() + cosy * cosp * u.v() * dt;
-                x_.y() = x.y() + siny * cosp * u.v() * dt;
-                x_.z() = x.z() - sinp * u.v() * dt;
+                x_.x_pos() = x.x_pos() + cosy * cosp * u.v() * dt;
+                x_.y_pos() = x.y_pos() + siny * cosp * u.v() * dt;
+                x_.z_pos() = x.z_pos() - sinp * u.v() * dt;
 
-                x_.sl() = x.sl();
-                x_.sa() = x.sa();
-//                x_.vx() = u.v();
-//                x_.vr() = u.dyaw();
+//                x_.sl() = x.sl();
+//                x_.sa() = x.sa();
+                x_.sl() = u.v();
+                x_.sa() = u.dyaw();
 
 
                 // Return transitioned state vector
@@ -195,9 +225,19 @@ namespace xbot {
                 // F = df/dx (Jacobian of state transition w.r.t. the state)
                 this->F.setZero();
 
-                auto newRoll = x.roll() + u.droll() * dt;
-                auto newPitch = x.pitch() + u.dpitch() * dt;
-                auto newYaw = x.yaw() + u.dyaw() * dt;
+                tf2::Quaternion q_current;
+                q_current.setRPY(x.roll(), x.pitch(), x.yaw()); // Convert Euler to quaternion
+
+                // Create a quaternion representing the angular change
+                tf2::Quaternion q_control;
+                q_control.setRPY(u.droll()*dt, u.dpitch()*dt, u.dyaw()*dt);
+
+                // Calculate new quaternion
+                tf2::Quaternion q_new = q_current * q_control;
+
+                tf2::Matrix3x3 wm(q_new);
+                double newRoll,newPitch,newYaw;
+                wm.getRPY(newRoll, newPitch, newYaw);
 
                 double cosy = std::cos(newYaw);
                 double siny = std::sin(newYaw);

@@ -20,15 +20,12 @@ public:
     //! Orientation
     static constexpr size_t ROLL = 0;
     static constexpr size_t PITCH = 1;
-    //static constexpr size_t YAW = 2;
     
     T roll()  const { return (*this)[ ROLL ]; }
     T pitch()  const { return (*this)[ PITCH ]; }
-    //T yaw()  const { return (*this)[ YAW ]; }
 
     T& roll() { return (*this)[ ROLL ]; }
     T& pitch() { return (*this)[ PITCH ]; }
-    //T& yaw() { return (*this)[ YAW ]; }
 };
 
 /**
@@ -59,7 +56,6 @@ public:
 
         this->H( M::ROLL, S::ROLL) = 1;
         this->H( M::PITCH, S::PITCH ) = 1;
-        //this->H( M::YAW, S::YAW ) = 1;
     }
     
     /**
@@ -78,7 +74,6 @@ public:
         // Measurement is given by the actual robot orientation
         measurement.roll() = x.roll();
         measurement.pitch() = x.pitch();
-        //measurement.yaw() = x.yaw();
         
         return measurement;
     }

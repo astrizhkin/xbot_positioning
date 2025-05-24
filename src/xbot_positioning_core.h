@@ -33,6 +33,8 @@ namespace xbot {
         typedef xbot::positioning::SpeedMeasurementModel<T> SpeedModelT;
 
         class xbot_positioning_core {
+        //private:
+        //    void logIfChanged(const xbot::positioning::StateT &x0, const xbot::positioning::StateT &x1, const std::string &msg);
 
         public:
             xbot_positioning_core();
@@ -40,7 +42,7 @@ namespace xbot {
             const StateT &predict(double linearVelocity, double vroll, double vpitch, double vyaw, double dt);
             const StateT &updatePosition(double x, double y, double z, double covariance);
             const StateT &updateOrientation(double roll, double pitch, /*double yaw, */double covariance);
-            const StateT &updateOrientation2(double vx, double vy, double vz, double covariance);
+            const StateT &updateOrientation2(double vx, double vy, double covariance);
             const StateT &updateSpeed(double linearVelocity, double angularVelocity, double covariance);
             const StateT &getState();
             void setState(double px, double py, double pz, double roll, double pitch, double yaw, double linearVelocity, double angularVelocity);
@@ -48,7 +50,7 @@ namespace xbot {
             void setAntennaOffset(tf2::Vector3 antenna_offset);
 
         public:
-            Kalman::ExtendedKalmanFilter<StateT> ekf{};
+            Kalman::ExtendedKalmanFilter<StateT> kf{};
             SystemModelT sys{};
             PositionModelT p_model{};
             OrientationModelT o_model{};

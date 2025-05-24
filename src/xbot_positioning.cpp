@@ -34,6 +34,8 @@ ros::Publisher xbot_absolute_pose_pub;
 // Debug Publishers
 ros::Publisher kalman_state;
 ros::Publisher dbg_expected_motion_vector;
+ros::Publisher gps_velocity_pub;
+ros::Publisher gps_baselink_pub;
 
 // The kalman filters
 xbot::positioning::xbot_positioning_core core{};
@@ -48,6 +50,12 @@ bool skip_gyro_calibration;
 #endif
 bool has_gps;
 xbot_msgs::AbsolutePose last_gps;
+bool gps_enabled = true;
+int gps_outlier_count = 0;
+int valid_gps_samples = 0;
+ros::Time last_gps_time(0.0);
+uint64_t last_pose_update_epoch;
+uint64_t last_orientation_update_epoch;
 
 // True, if last_imu is valid and gyro_offset is valid
 bool has_gyro;
@@ -68,15 +76,9 @@ double max_gps_accuracy;
 bool publish_debug, publish_2d_odom;
 
 // Antenna offset (offset between point of rotation and antenna)
-//double antenna_offset_x, antenna_offset_y, antenna_offset_z;
+tf2::Vector3 antenna_offset;
 
 xbot_positioning::KalmanState state_msg;
-
-bool gps_enabled = true;
-int gps_outlier_count = 0;
-int valid_gps_samples = 0;
-
-ros::Time last_gps_time(0.0);
 
 tf2::Vector3 normal_gravity_vector(0.0, 0.0, 9.81);
 tf2::Vector3 accel_bias(0.0, 0.0, 0.0);
@@ -197,8 +199,8 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     core.predict(odom_linear_velocity, imu_gyro.x(), imu_gyro.y(), imu_gyro.z(), dt);
     //covariance less than 100 will significantly affect roll/pitch readings on linear horizontal acceleration (x,y)
     core.updateOrientation(roll_angle, pitch_angle, 5000.0);
-    auto x = core.updateSpeed(odom_linear_velocity, imu_gyro.z(),0.01);
-
+    xbot::positioning::StateT x = core.updateSpeed(odom_linear_velocity, imu_gyro.z(),0.01);
+    
     //ROS_INFO("[xbot_positioning] RPY %+3.2f %+3.2f %+3.2f Input RP %+3.2f(x%+3.2f) %+3.2f(y%+3.2f) GYRO XYZ %+3.2f %+3.2f %+3.2f ACCEL XYZ %+4.2f %+4.2f %+4.2f",
     //    x.roll(),x.pitch(),x.yaw(),
     //    roll_angle,roll_cross.x(),pitch_angle,pitch_cross.y(),
@@ -298,7 +300,7 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
 
     xbot_msgs::AbsolutePose xb_absolute_pose_msg_2d;
     xb_absolute_pose_msg_2d.header = odometry_2d.header;
-    xb_absolute_pose_msg_2d.sensor_stamp = 0;
+    xb_absolute_pose_msg_2d.epoch_ms = 0;
     xb_absolute_pose_msg_2d.received_stamp = 0;
     xb_absolute_pose_msg_2d.source = xbot_msgs::AbsolutePose::SOURCE_SENSOR_FUSION;
     xb_absolute_pose_msg_2d.flags = xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_DEAD_RECKONING;
@@ -364,6 +366,7 @@ void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
 void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
     odom_linear_velocity = msg->twist.linear.x;
     odom_angular_velocity = msg->twist.angular.z;
+    //ROS_INFO_STREAM_THROTTLE(0.2,"[xbot_positioning] twist in lin=" << odom_linear_velocity << " ang=" << odom_angular_velocity);
 }
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
@@ -412,6 +415,12 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         return;
     }
 
+    if (msg->pose_valid || msg->motion_vector_valid || msg->position_accuracy_valid) {
+        ROS_INFO_STREAM("[xbot_positioning] Accept GPS update: " << msg->epoch_ms);
+    } else {
+        ROS_INFO_STREAM("[xbot_positioning] Dropped GPS update without valid data : " << msg->epoch_ms);
+    }
+
     double time_since_last_gps = (ros::Time::now() - last_gps_time).toSec();
     if (time_since_last_gps > 5.0) {
         ROS_WARN_STREAM("[xbot_positioning] Last GPS was " << time_since_last_gps << " seconds ago.");
@@ -439,33 +448,71 @@ void onGpsPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
         valid_gps_samples++;
 
         if (!has_gps && valid_gps_samples > 10) {
-            //ROS_INFO_STREAM("GPS data now valid");
             ROS_INFO_STREAM("[xbot_positioning] First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
             // we don't even have gps yet, set odometry to first estimate
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 0.001);
-
+            if(msg->pose_valid && msg->epoch_ms != last_pose_update_epoch) {
+                core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 0.001);
+                last_pose_update_epoch = msg->epoch_ms;
+            } else {
+                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch position update");
+            }
             has_gps = true;
         } else if (has_gps) {
             // gps was valid before, we apply the filter
             //ROS_INFO_STREAM("[xbot_positioning] Next GPS data, update position " << msg->pose.pose.position.x << ", " << msg->pose.pose.position.y);
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 500.0);
-            if (publish_debug) {
-                auto m = core.o2_model.h(core.ekf.getState());
-                geometry_msgs::Vector3 dbg;
-                dbg.x = m.vx();
-                dbg.y = m.vy();
-                dbg.z = m.vz();
-                dbg_expected_motion_vector.publish(dbg);
+            if(msg->pose_valid && msg->epoch_ms != last_pose_update_epoch) {
+                auto &x = core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z, 500.0);
+                last_pose_update_epoch = msg->epoch_ms;
+                if (publish_debug) {
+                    tf2::Quaternion q;
+                    q.setRPY(x.roll(),x.pitch(),x.yaw());
+                    tf2::Vector3 antennaRotated = tf2::quatRotate(q, antenna_offset);
+                    geometry_msgs::Vector3Stamped gps_baselink;
+                    gps_baselink.header.stamp = msg->header.stamp;
+                    gps_baselink.header.frame_id = msg->header.frame_id;
+                    gps_baselink.vector.x = msg->pose.pose.position.x - antennaRotated.x();
+                    gps_baselink.vector.y = msg->pose.pose.position.y - antennaRotated.y();
+                    gps_baselink.vector.z = msg->pose.pose.position.y - antennaRotated.z();
+                    gps_baselink_pub.publish(gps_baselink);
+                }
+            } else {
+                ROS_INFO_STREAM("[xbot_positioning] Skip same epoch position update");
             }
-            if (std::sqrt(std::pow(msg->motion_vector.x, 2) + std::pow(msg->motion_vector.y, 2) + std::pow(msg->motion_vector.z, 2)) >= min_speed) {
-                core.updateOrientation2(msg->motion_vector.x, msg->motion_vector.y, msg->motion_vector.z, 10000.0);
+
+
+            if(msg->motion_vector_valid && msg->epoch_ms != last_orientation_update_epoch){
+                double gps_3d_linear_velocity = std::sqrt(msg->motion_vector.x * msg->motion_vector.x +
+                                                    msg->motion_vector.y * msg->motion_vector.y +
+                                                    msg->motion_vector.z * msg->motion_vector.z);
+
+                if (gps_3d_linear_velocity >= min_speed) {
+                    //ROS_INFO_STREAM("[xbot_positioning] Calc heading dx=" << msg->motion_vector.x << " dy=" << msg->motion_vector.y << " head="<<best_heading_yaw<< " yaw="<<core.getState().yaw());
+                    core.updateOrientation2(msg->motion_vector.x, msg->motion_vector.y, 5000.0);
+                    last_orientation_update_epoch = msg->epoch_ms;
+                }
+                if (publish_debug) {
+                    geometry_msgs::TwistStamped gps_vel;
+                    gps_vel.header.stamp = msg->header.stamp;
+                    gps_vel.header.frame_id = msg->header.frame_id;
+                    gps_vel.twist.linear.x = gps_3d_linear_velocity;
+                    gps_velocity_pub.publish(gps_vel);
+
+                    auto m = core.o2_model.h(core.kf.getState());
+                    geometry_msgs::Vector3Stamped dbg;
+                    dbg.header.stamp = msg->header.stamp;
+                    dbg.header.frame_id = msg->header.frame_id;
+                    dbg.vector.x = m.gps_vx();
+                    dbg.vector.y = m.gps_vy();
+                    dbg.vector.z = 0;
+                    dbg_expected_motion_vector.publish(dbg);
+                }
             }
         }
     } else {
         ROS_WARN_STREAM("[xbot_positioning] GPS outlier found. Distance was: " << distance_to_last_gps);
         gps_outlier_count++;
-        // ~10 sec
-        if (gps_outlier_count > 10) {
+        // ~5 sec
+        if (gps_outlier_count > 25) {
             ROS_ERROR_STREAM("[xbot_positioning] too many outliers, assuming that the current gps value is valid.");
             // store the gps as last
             last_gps = *msg;
@@ -511,8 +558,6 @@ int main(int argc, char **argv) {
     valid_gps_samples = 0;
     gps_outlier_count = 0;
 
-    //antenna_offset_x = antenna_offset_y = antenna_offset_z = 0;
-
     ros::NodeHandle n;
     ros::NodeHandle paramNh("~");
 
@@ -522,13 +567,10 @@ int main(int argc, char **argv) {
     paramNh.param("skip_gyro_calibration", skip_gyro_calibration, false);
     double gyro_bias_z;
     paramNh.param("gyro_offset", gyro_bias_z, 0.0);
-    paramNh.param("min_speed", min_speed, 0.01);
+    paramNh.param("min_speed", min_speed, 0.1);//10cm/sec
     paramNh.param("max_gps_accuracy", max_gps_accuracy, 0.1);
     paramNh.param("debug", publish_debug, false);
     paramNh.param("publish_2d_odom", publish_2d_odom, false);
-    //paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
-    //paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
-    //paramNh.param("antenna_offset_z", antenna_offset_z, 0.0);
 
     double accel_bias_x = 0.0, accel_bias_y = 0.0, accel_bias_z = 0.0;
     paramNh.param("accel_bias_x", accel_bias_x, 0.0);
@@ -539,7 +581,6 @@ int main(int argc, char **argv) {
         accel_bias.setValue(accel_bias_x,accel_bias_y,accel_bias_z);
         skip_accelermoter_calibration = true;
     }
-    tf2::Vector3 antenna_offset;
     if(!findStaticTransform("base_link", "gps", antenna_offset, n)){
         return 1;
     }
@@ -562,8 +603,10 @@ int main(int argc, char **argv) {
     xbot_absolute_pose_pub = paramNh.advertise<xbot_msgs::AbsolutePose>("xb_pose_out", 50);
 
     if (publish_debug) {
-        dbg_expected_motion_vector = paramNh.advertise<geometry_msgs::Vector3>("debug_expected_motion_vector", 50);
+        dbg_expected_motion_vector = paramNh.advertise<geometry_msgs::Vector3Stamped>("debug_expected_motion_vector", 50);
         kalman_state = paramNh.advertise<xbot_positioning::KalmanState>("kalman_state", 50);
+        gps_velocity_pub = paramNh.advertise<geometry_msgs::TwistStamped>("gps_vel", 50);
+        gps_baselink_pub = paramNh.advertise<geometry_msgs::Vector3Stamped>("gps_baselink", 50);
     }
 
     ros::Subscriber imu_sub = paramNh.subscribe("imu_in", 10, onImu);
@@ -573,6 +616,7 @@ int main(int argc, char **argv) {
     #ifdef WHEEL_TICKS_MSG
         ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
     #endif
+    //gps_enabled = false;
 
     ros::spin();
     return 0;
