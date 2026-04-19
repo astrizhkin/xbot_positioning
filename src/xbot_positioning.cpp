@@ -3,8 +3,6 @@
 // Copyright (c) 2022 Clemens Elflein. All rights reserved.
 //
 
-//#define WHEEL_TICKS_MSG
-
 #include <geometry_msgs/TwistStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
@@ -516,9 +514,6 @@ int main(int argc, char **argv) {
     odom_linear_velocity = 0.0;
     odom_angular_velocity = 0.0;
     has_gyro = false;
-    #ifdef WHEEL_TICKS_MSG
-        has_ticks = false;
-    #endif
     gyro_bias.setValue(0.0,0.0,0.0);
     accel_bias.setValue(0.0,0.0,0.0);
 
