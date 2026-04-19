@@ -19,9 +19,6 @@
 #include "geometry_msgs/TwistWithCovarianceStamped.h"
 #include "ros/ros.h"
 #include "xbot_msgs/AbsolutePose.h"
-#ifdef WHEEL_TICKS_MSG
-    #include "xbot_msgs/wheel_WheelTick.h"
-#endif
 #include "xbot_positioning/GPSControlSrv.h"
 #include "xbot_positioning/KalmanState.h"
 #include "xbot_positioning/SetPoseSrv.h"
@@ -43,11 +40,6 @@ xbot::positioning::xbot_positioning_core core{};
 // True, if we don't want to do gyro calibration on launch
 bool skip_gyro_calibration;
 
-// True, if we have wheel ticks (i.e. last_ticks is valid)
-#ifdef WHEEL_TICKS_MSG
-    bool has_ticks;
-    xbot_msgs::WheelTick last_ticks;
-#endif
 bool has_gps;
 xbot_msgs::AbsolutePose last_gps;
 bool gps_enabled = true;
@@ -334,35 +326,6 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     last_imu = *msg;
 }
 
-#ifdef WHEEL_TICKS_MSG
-void onWheelTicks(const xbot_msgs::WheelTick::ConstPtr &msg) {
-    if (!has_ticks) {
-        last_ticks = *msg;
-        has_ticks = true;
-        return;
-    }
-    double dt = (msg->stamp - last_ticks.stamp).toSec();
-
-    double rl_delta = msg->wheel_pos_rl - last_ticks.wheel_pos_rl;
-    double fl_delta = msg->wheel_pos_fl - last_ticks.wheel_pos_fl;
-    double rr_delta = msg->wheel_pos_rr - last_ticks.wheel_pos_rr;
-    double fr_delta = msg->wheel_pos_fr - last_ticks.wheel_pos_fr;
-
-    double d_wheel_l = (rl_delta + fl_delta) * msg->wheel_radius / 2;
-    double d_wheel_r = (rr_delta + fr_delta) * msg->wheel_radius / 2;
-
-    double d_linear = (d_wheel_r + d_wheel_l) / 2.0;
-    double d_angular = (d_wheel_r - d_wheel_l) / msg->wheel_separation;
-    
-    odom_linear_velocity = d_linear / dt;
-    odom_angular_velocity = d_angular / dt;
-
-    //ROS_INFO("vx %f dist %f",vx,d_center);
-
-    last_ticks = *msg;
-}
-#endif
-
 void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
     odom_linear_velocity = msg->twist.linear.x;
     odom_angular_velocity = msg->twist.angular.z;
@@ -619,9 +582,6 @@ int main(int argc, char **argv) {
     ros::Subscriber twist_sub = paramNh.subscribe("twist_in", 10, onTwistIn);
     ros::Subscriber gps_pose_sub = paramNh.subscribe("xb_pose_in", 10, onGpsPose);
     ros::Subscriber initial_pose_sub = paramNh.subscribe("/initialpose", 10, onInitialPose);
-    #ifdef WHEEL_TICKS_MSG
-        ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
-    #endif
     //gps_enabled = false;
 
     ros::spin();
